@@ -1,6 +1,8 @@
-FROM nginx:alpine
-RUN rm /etc/nginx/conf.d/default.conf
-COPY nginx.conf /etc/nginx/templates/default.conf.template
-COPY index.html /usr/share/nginx/html/index.html
+FROM python:3.12-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY . .
 ENV PORT=8080
 EXPOSE 8080
+CMD ["sh", "-c", "python -c 'from app import init_db; init_db()' && gunicorn --bind 0.0.0.0:$PORT app:app"]

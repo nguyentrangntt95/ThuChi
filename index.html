@@ -29,12 +29,16 @@ input[type="number"] { -moz-appearance: textfield; }
 <body>
 <div id="root"></div>
 <script type="text/babel">
-const { useState, useEffect, useMemo, useRef } = React;
+const { useState, useEffect, useMemo, useRef, useCallback } = React;
 
 // ── Helpers ──
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const api = async (path, opts) => {
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  return res.json();
+};
 const fmt = (n) => new Intl.NumberFormat('vi-VN').format(n);
 const today = () => new Date().toISOString().slice(0, 10);
 const monthOf = (d) => d.slice(0, 7);
@@ -364,19 +368,35 @@ function ExportButton({ expenses }) {
 // ── App ──
 function App() {
   const [dark, setDark] = useState(() => load('tc-dark', false));
-  const [expenses, setExpenses] = useState(() => load('tc-expenses', []));
-  const [budgets, setBudgets] = useState(() => load('tc-budgets', {}));
+  const [expenses, setExpenses] = useState([]);
+  const [budgets, setBudgets] = useState({});
   const [month, setMonth] = useState(() => today().slice(0, 7));
-  const [modal, setModal] = useState(null); // null | 'new' | expense
+  const [modal, setModal] = useState(null);
   const [filterCat, setFilterCat] = useState('all');
   const [showQR, setShowQR] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => { save('tc-expenses', expenses); }, [expenses]);
-  useEffect(() => { save('tc-budgets', budgets); }, [budgets]);
+  // Load data from API
+  const fetchData = useCallback(async () => {
+    try {
+      const [expData, budData] = await Promise.all([
+        api('/api/expenses'),
+        api('/api/budgets')
+      ]);
+      setExpenses(expData);
+      setBudgets(budData);
+    } catch (e) {
+      console.error('Failed to fetch:', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { save('tc-dark', dark); document.documentElement.classList.toggle('dark', dark); }, [dark]);
 
   const monthExpenses = useMemo(() =>
-    expenses.filter(e => monthOf(e.date) === month).sort((a, b) => b.date.localeCompare(a.date) || b.id?.localeCompare(a.id)),
+    expenses.filter(e => monthOf(e.date) === month).sort((a, b) => b.date.localeCompare(a.date) || (b.id || '').localeCompare(a.id || '')),
     [expenses, month]
   );
 
@@ -388,18 +408,28 @@ function App() {
   const monthTotal = useMemo(() => monthExpenses.reduce((s, e) => s + e.amount, 0), [monthExpenses]);
   const monthBudget = budgets[month] || 0;
 
-  const addExpense = (data) => {
-    setExpenses(prev => [...prev, { id: uid(), ...data }]);
+  const addExpense = async (data) => {
+    const newExp = { id: uid(), ...data };
+    setExpenses(prev => [...prev, newExp]);
     setModal(null);
+    await api('/api/expenses', { method: 'POST', body: JSON.stringify(newExp) });
   };
 
-  const updateExpense = (data) => {
-    setExpenses(prev => prev.map(e => e.id === modal.id ? { ...e, ...data } : e));
+  const updateExpense = async (data) => {
+    const id = modal.id;
+    setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...data } : e));
     setModal(null);
+    await api(`/api/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   };
 
-  const deleteExpense = (id) => {
+  const deleteExpense = async (id) => {
     setExpenses(prev => prev.filter(e => e.id !== id));
+    await api(`/api/expenses/${id}`, { method: 'DELETE' });
+  };
+
+  const setBudget = async (v) => {
+    setBudgets(prev => ({ ...prev, [month]: v }));
+    await api('/api/budgets', { method: 'POST', body: JSON.stringify({ month, amount: v }) });
   };
 
   // Group filtered by date
@@ -452,7 +482,7 @@ function App() {
           <MonthPicker value={month} onChange={setMonth} />
         </div>
         <BudgetBar total={monthTotal} budget={monthBudget}
-          onSetBudget={(v) => setBudgets(prev => ({ ...prev, [month]: v }))} />
+          onSetBudget={setBudget} />
 
         {/* Category chart */}
         <CategoryChart expenses={monthExpenses} />

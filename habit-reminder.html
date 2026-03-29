@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Habit Reminder - Nhắc nhở thói quen</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      fontFamily: { sans: ['system-ui', '-apple-system', 'sans-serif'] },
+    }
+  }
+}
+</script>
+<style>
+@keyframes checkPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+@keyframes slideIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-check { animation: checkPop 0.35s ease-out; }
+.animate-slide-in { animation: slideIn 0.3s ease-out; }
+.animate-fade-in { animation: fadeIn 0.2s ease-out; }
+body { margin: 0; min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useCallback, useRef } = React;
+
+// ── Helpers ──
+const todayKey = () => new Date().toISOString().slice(0, 10);
+const formatTime = (h, m) => `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+
+function loadData(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key)) || fallback; }
+  catch { return fallback; }
+}
+function saveData(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
+
+function getStreak(completionLog) {
+  let streak = 0;
+  const d = new Date();
+  // Check if completed today
+  const todayStr = todayKey();
+  if (completionLog[todayStr]) {
+    streak = 1;
+    d.setDate(d.getDate() - 1);
+  } else {
+    // If not completed today, start counting from yesterday
+    d.setDate(d.getDate() - 1);
+  }
+  while (true) {
+    const key = d.toISOString().slice(0, 10);
+    if (completionLog[key]) {
+      streak++;
+      d.setDate(d.getDate() - 1);
+    } else break;
+  }
+  return streak;
+}
+
+function getNextReminder(reminders) {
+  const now = new Date();
+  const nowMins = now.getHours() * 60 + now.getMinutes();
+  let closest = null;
+  for (const r of reminders) {
+    const rMins = r.hour * 60 + r.minute;
+    if (rMins > nowMins) {
+      if (!closest || rMins < closest.hour * 60 + closest.minute) closest = r;
+    }
+  }
+  return closest;
+}
+
+const EMOJIS = ['💪','🏃','📖','💧','🧘','🎯','✍️','🌅','🥗','💤','🎵','🧠','🌿','❤️','⏰','🔥'];
+
+// ── Components ──
+
+function NotificationBanner({ permission, onRequest }) {
+  if (permission === 'granted') return null;
+  return (
+    <div className="mx-4 mt-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 flex items-center justify-between gap-3">
+      <div className="flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200">
+        <span>🔔</span>
+        <span>{permission === 'denied' ? 'Thông báo bị chặn. Hãy bật trong cài đặt trình duyệt.' : 'Bật thông báo để nhận nhắc nhở đúng giờ'}</span>
+      </div>
+      {permission !== 'denied' && (
+        <button onClick={onRequest} className="shrink-0 text-sm font-medium px-3 py-1 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors">
+          Bật
+        </button>
+      )}
+    </div>
+  );
+}
+
+function ProgressBar({ habits }) {
+  const total = habits.length;
+  if (total === 0) return null;
+  const done = habits.filter(h => h.completionLog[todayKey()]).length;
+  const pct = Math.round((done / total) * 100);
+  return (
+    <div className="mx-4 mt-4">
+      <div className="flex justify-between text-sm mb-1.5">
+        <span className="text-zinc-600 dark:text-zinc-400">Tiến độ hôm nay</span>
+        <span className="font-semibold text-zinc-800 dark:text-zinc-200">{done}/{total} ({pct}%)</span>
+      </div>
+      <div className="h-2.5 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+        <div
+          className="h-full bg-emerald-500 rounded-full transition-all duration-500 ease-out"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function HabitCard({ habit, onToggle, onEdit, onDelete }) {
+  const [justChecked, setJustChecked] = useState(false);
+  const completed = !!habit.completionLog[todayKey()];
+  const streak = getStreak(habit.completionLog);
+  const next = getNextReminder(habit.reminders);
+
+  const handleToggle = () => {
+    if (!completed) setJustChecked(true);
+    onToggle(habit.id);
+  };
+
+  useEffect(() => {
+    if (justChecked) {
+      const t = setTimeout(() => setJustChecked(false), 400);
+      return () => clearTimeout(t);
+    }
+  }, [justChecked]);
+
+  return (
+    <div className={`animate-slide-in p-4 rounded-xl border transition-all duration-200 ${
+      completed
+        ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800'
+        : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 hover:border-zinc-300 dark:hover:border-zinc-600'
+    }`}>
+      <div className="flex items-start gap-3">
+        {/* Check button */}
+        <button
+          onClick={handleToggle}
+          className={`mt-0.5 shrink-0 w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
+            completed
+              ? 'bg-emerald-500 border-emerald-500 text-white'
+              : 'border-zinc-300 dark:border-zinc-600 hover:border-emerald-400'
+          } ${justChecked ? 'animate-check' : ''}`}
+        >
+          {completed && (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          )}
+        </button>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">{habit.emoji}</span>
+            <h3 className={`font-medium truncate ${completed ? 'line-through text-zinc-400 dark:text-zinc-500' : 'text-zinc-900 dark:text-zinc-100'}`}>
+              {habit.name}
+            </h3>
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500 dark:text-zinc-400">
+            {habit.reminders.length > 0 && (
+              <span className="flex items-center gap-1">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                {habit.reminders.map(r => formatTime(r.hour, r.minute)).join(', ')}
+              </span>
+            )}
+            {next && !completed && (
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                Tiếp: {formatTime(next.hour, next.minute)}
+              </span>
+            )}
+            {streak > 0 && (
+              <span className="flex items-center gap-1 text-orange-500 font-medium">
+                🔥 {streak} ngày
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-1 shrink-0">
+          <button onClick={() => onEdit(habit)} className="p-1.5 rounded-md text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button onClick={() => onDelete(habit.id)} className="p-1.5 rounded-md text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HabitModal({ habit, onSave, onClose }) {
+  const [name, setName] = useState(habit?.name || '');
+  const [emoji, setEmoji] = useState(habit?.emoji || '💪');
+  const [reminders, setReminders] = useState(habit?.reminders || []);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [newHour, setNewHour] = useState('07');
+  const [newMin, setNewMin] = useState('00');
+
+  const addReminder = () => {
+    const h = parseInt(newHour), m = parseInt(newMin);
+    if (reminders.some(r => r.hour === h && r.minute === m)) return;
+    setReminders([...reminders, { hour: h, minute: m }].sort((a,b) => a.hour*60+a.minute - b.hour*60-b.minute));
+  };
+  const removeReminder = (i) => setReminders(reminders.filter((_, idx) => idx !== i));
+
+  const handleSave = () => {
+    if (!name.trim()) return;
+    onSave({ name: name.trim(), emoji, reminders });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center animate-fade-in" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/40" />
+      <div
+        className="relative w-full max-w-md bg-white dark:bg-zinc-800 rounded-t-2xl sm:rounded-2xl p-5 max-h-[85vh] overflow-y-auto animate-slide-in"
+        onClick={e => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
+          {habit ? 'Sửa thói quen' : 'Thêm thói quen mới'}
+        </h2>
+
+        {/* Emoji */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">Biểu tượng</label>
+          <div className="relative">
+            <button
+              onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+              className="w-12 h-12 text-2xl rounded-lg border border-zinc-200 dark:border-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
+            >
+              {emoji}
+            </button>
+            {showEmojiPicker && (
+              <div className="absolute top-14 left-0 z-10 p-2 bg-white dark:bg-zinc-700 rounded-lg border border-zinc-200 dark:border-zinc-600 shadow-lg grid grid-cols-8 gap-1">
+                {EMOJIS.map(e => (
+                  <button key={e} onClick={() => { setEmoji(e); setShowEmojiPicker(false); }}
+                    className="w-9 h-9 text-lg rounded hover:bg-zinc-100 dark:hover:bg-zinc-600 transition-colors">
+                    {e}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Name */}
+        <div className="mb-4">
+          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">Tên thói quen</label>
+          <input
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="VD: Uống nước, Tập thể dục..."
+            className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+            autoFocus
+          />
+        </div>
+
+        {/* Reminders */}
+        <div className="mb-5">
+          <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">Giờ nhắc nhở</label>
+          <div className="flex items-center gap-2 mb-2">
+            <select value={newHour} onChange={e => setNewHour(e.target.value)}
+              className="px-2 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 text-sm">
+              {Array.from({length:24},(_,i) => <option key={i} value={String(i).padStart(2,'0')}>{String(i).padStart(2,'0')}</option>)}
+            </select>
+            <span className="text-zinc-500 font-bold">:</span>
+            <select value={newMin} onChange={e => setNewMin(e.target.value)}
+              className="px-2 py-1.5 rounded-md border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 text-sm">
+              {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <button onClick={addReminder}
+              className="px-3 py-1.5 text-sm font-medium rounded-md bg-emerald-500 text-white hover:bg-emerald-600 transition-colors">
+              Thêm
+            </button>
+          </div>
+          {reminders.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {reminders.map((r, i) => (
+                <span key={i} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-zinc-100 dark:bg-zinc-700 text-sm text-zinc-700 dark:text-zinc-300">
+                  {formatTime(r.hour, r.minute)}
+                  <button onClick={() => removeReminder(i)} className="text-zinc-400 hover:text-red-500 ml-0.5">&times;</button>
+                </span>
+              ))}
+            </div>
+          )}
+          {reminders.length === 0 && (
+            <p className="text-xs text-zinc-400">Chưa có giờ nhắc nào</p>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-3">
+          <button onClick={onClose}
+            className="flex-1 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-600 text-zinc-700 dark:text-zinc-300 font-medium hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors">
+            Hủy
+          </button>
+          <button onClick={handleSave}
+            className="flex-1 py-2.5 rounded-lg bg-emerald-500 text-white font-medium hover:bg-emerald-600 transition-colors disabled:opacity-40"
+            disabled={!name.trim()}>
+            {habit ? 'Lưu' : 'Tạo'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── App ──
+function App() {
+  const [dark, setDark] = useState(() => loadData('habit-dark', false));
+  const [habits, setHabits] = useState(() => loadData('habit-list', []));
+  const [modal, setModal] = useState(null); // null | 'new' | habit object
+  const [notifPermission, setNotifPermission] = useState(
+    typeof Notification !== 'undefined' ? Notification.permission : 'denied'
+  );
+  const notifiedRef = useRef(new Set());
+
+  // Persist
+  useEffect(() => { saveData('habit-list', habits); }, [habits]);
+  useEffect(() => {
+    saveData('habit-dark', dark);
+    document.documentElement.classList.toggle('dark', dark);
+  }, [dark]);
+
+  // Notification check loop
+  useEffect(() => {
+    if (notifPermission !== 'granted') return;
+    const interval = setInterval(() => {
+      const now = new Date();
+      const nowStr = `${now.getHours()}:${now.getMinutes()}`;
+      habits.forEach(h => {
+        if (h.completionLog[todayKey()]) return;
+        h.reminders.forEach(r => {
+          const rStr = `${r.hour}:${r.minute}`;
+          const nKey = `${todayKey()}-${h.id}-${rStr}`;
+          if (rStr === nowStr && !notifiedRef.current.has(nKey)) {
+            notifiedRef.current.add(nKey);
+            new Notification(`${h.emoji} ${h.name}`, {
+              body: 'Đã đến giờ thực hiện thói quen!',
+              icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">' + h.emoji + '</text></svg>',
+              tag: nKey,
+            });
+          }
+        });
+      });
+    }, 15000); // check every 15s
+    return () => clearInterval(interval);
+  }, [habits, notifPermission]);
+
+  const requestNotif = async () => {
+    if (typeof Notification === 'undefined') return;
+    const p = await Notification.requestPermission();
+    setNotifPermission(p);
+  };
+
+  const addHabit = (data) => {
+    const newH = { id: Date.now().toString(), ...data, completionLog: {} };
+    setHabits(prev => [...prev, newH]);
+    setModal(null);
+  };
+
+  const updateHabit = (data) => {
+    setHabits(prev => prev.map(h => h.id === modal.id ? { ...h, ...data } : h));
+    setModal(null);
+  };
+
+  const toggleHabit = (id) => {
+    const key = todayKey();
+    setHabits(prev => prev.map(h => {
+      if (h.id !== id) return h;
+      const log = { ...h.completionLog };
+      if (log[key]) delete log[key]; else log[key] = true;
+      return { ...h, completionLog: log };
+    }));
+  };
+
+  const deleteHabit = (id) => {
+    setHabits(prev => prev.filter(h => h.id !== id));
+  };
+
+  return (
+    <div className={`min-h-screen transition-colors duration-200 ${dark ? 'bg-zinc-900' : 'bg-zinc-50'}`}>
+      {/* Header */}
+      <header className="sticky top-0 z-40 backdrop-blur-md bg-white/80 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Habit Reminder</h1>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+              {new Date().toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long' })}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {notifPermission === 'granted' && (
+              <span className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                Thông báo bật
+              </span>
+            )}
+            <button onClick={() => setDark(!dark)}
+              className="p-2 rounded-lg text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+              {dark ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              )}
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-lg mx-auto pb-24">
+        <NotificationBanner permission={notifPermission} onRequest={requestNotif} />
+        <ProgressBar habits={habits} />
+
+        {/* Habit list */}
+        <div className="px-4 mt-4 space-y-3">
+          {habits.length === 0 && (
+            <div className="text-center py-16">
+              <div className="text-5xl mb-3">🌱</div>
+              <p className="text-zinc-500 dark:text-zinc-400 text-sm">Chưa có thói quen nào</p>
+              <p className="text-zinc-400 dark:text-zinc-500 text-xs mt-1">Nhấn nút bên dưới để bắt đầu</p>
+            </div>
+          )}
+          {habits.map(h => (
+            <HabitCard key={h.id} habit={h} onToggle={toggleHabit} onEdit={() => setModal(h)} onDelete={deleteHabit} />
+          ))}
+        </div>
+      </main>
+
+      {/* FAB */}
+      <div className="fixed bottom-6 left-0 right-0 flex justify-center z-30">
+        <button
+          onClick={() => setModal('new')}
+          className="px-5 py-3 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-medium shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all active:scale-95 flex items-center gap-2"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Thêm thói quen
+        </button>
+      </div>
+
+      {/* Modal */}
+      {modal && (
+        <HabitModal
+          habit={modal === 'new' ? null : modal}
+          onSave={modal === 'new' ? addHabit : updateHabit}
+          onClose={() => setModal(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
