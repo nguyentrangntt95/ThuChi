@@ -224,7 +224,7 @@ function QRCode() {
           <div className="absolute inset-0 bg-black/40" />
           <div className="relative bg-white dark:bg-zinc-800 rounded-2xl p-6 text-center slide-up" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">Quét để mở trên điện thoại</h3>
-            <div ref={qrRef} className="mx-auto w-[200px] h-[200px] bg-white rounded-lg p-2 flex items-center justify-center" />
+            <div ref={qrRef} className="mx-auto w-[220px] h-[220px] bg-white rounded-lg p-3 flex items-center justify-center overflow-visible" />
             <p className="text-xs text-zinc-400 mt-3 max-w-[200px] mx-auto break-all">{url}</p>
             <button onClick={() => setShow(false)} className="mt-4 px-4 py-2 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors">Đóng</button>
           </div>
