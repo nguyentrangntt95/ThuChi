@@ -8,6 +8,7 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
 <script>
 tailwind.config = {
   darkMode: 'class',
@@ -181,7 +182,38 @@ function CategoryChart({ expenses }) {
 function QRCode() {
   const [show, setShow] = useState(false);
   const url = window.location.href;
-  const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}`;
+  const qrRef = useRef(null);
+
+  useEffect(() => {
+    if (show && qrRef.current) {
+      qrRef.current.innerHTML = '';
+      const qr = qrcode(0, 'M');
+      qr.addData(url);
+      qr.make();
+      const modules = qr.getModuleCount();
+      const cellSize = Math.floor(200 / modules);
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      const totalSize = modules * cellSize;
+      svg.setAttribute('width', '200');
+      svg.setAttribute('height', '200');
+      svg.setAttribute('viewBox', `0 0 ${totalSize} ${totalSize}`);
+      for (let r = 0; r < modules; r++) {
+        for (let c = 0; c < modules; c++) {
+          if (qr.isDark(r, c)) {
+            const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            rect.setAttribute('x', c * cellSize);
+            rect.setAttribute('y', r * cellSize);
+            rect.setAttribute('width', cellSize);
+            rect.setAttribute('height', cellSize);
+            rect.setAttribute('fill', '#000');
+            svg.appendChild(rect);
+          }
+        }
+      }
+      qrRef.current.appendChild(svg);
+    }
+  }, [show, url]);
+
   return (
     <>
       <button onClick={() => setShow(true)} className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="QR Code">
@@ -192,7 +224,7 @@ function QRCode() {
           <div className="absolute inset-0 bg-black/40" />
           <div className="relative bg-white dark:bg-zinc-800 rounded-2xl p-6 text-center slide-up" onClick={e => e.stopPropagation()}>
             <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">Quét để mở trên điện thoại</h3>
-            <img src={qrSrc} alt="QR Code" width="200" height="200" className="mx-auto rounded-lg" />
+            <div ref={qrRef} className="mx-auto w-[200px] h-[200px] bg-white rounded-lg p-2 flex items-center justify-center" />
             <p className="text-xs text-zinc-400 mt-3 max-w-[200px] mx-auto break-all">{url}</p>
             <button onClick={() => setShow(false)} className="mt-4 px-4 py-2 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors">Đóng</button>
           </div>
