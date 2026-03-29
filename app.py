@@ -1,10 +1,25 @@
 import os
 import json
+import time
+import queue
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify, send_file, Response
 
 app = Flask(__name__)
+
+# SSE: list of queues, one per connected client
+clients = []
+
+def notify_clients():
+    dead = []
+    for q in clients:
+        try:
+            q.put_nowait("update")
+        except:
+            dead.append(q)
+    for q in dead:
+        clients.remove(q)
 
 def get_db():
     return psycopg2.connect(os.environ["DATABASE_URL"], cursor_factory=RealDictCursor)
@@ -31,6 +46,26 @@ def init_db():
     conn.commit()
     cur.close()
     conn.close()
+
+# SSE endpoint
+@app.route("/api/events")
+def events():
+    def stream():
+        q = queue.Queue()
+        clients.append(q)
+        try:
+            while True:
+                try:
+                    msg = q.get(timeout=30)
+                    yield f"data: {msg}\n\n"
+                except queue.Empty:
+                    yield ": heartbeat\n\n"
+        except GeneratorExit:
+            clients.remove(q)
+    return Response(stream(), mimetype="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    })
 
 # Serve frontend
 @app.route("/")
@@ -65,6 +100,7 @@ def add_expense():
     conn.commit()
     cur.close()
     conn.close()
+    notify_clients()
     return jsonify({"ok": True}), 201
 
 @app.route("/api/expenses/<eid>", methods=["PUT"])
@@ -79,6 +115,7 @@ def update_expense(eid):
     conn.commit()
     cur.close()
     conn.close()
+    notify_clients()
     return jsonify({"ok": True})
 
 @app.route("/api/expenses/<eid>", methods=["DELETE"])
@@ -89,6 +126,7 @@ def delete_expense(eid):
     conn.commit()
     cur.close()
     conn.close()
+    notify_clients()
     return jsonify({"ok": True})
 
 # ── Budgets API ──
@@ -115,9 +153,10 @@ def set_budget():
     conn.commit()
     cur.close()
     conn.close()
+    notify_clients()
     return jsonify({"ok": True})
 
 if __name__ == "__main__":
     init_db()
     port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, threaded=True)

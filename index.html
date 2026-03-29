@@ -393,12 +393,18 @@ function App() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  // Auto-refresh every 5 seconds
+  // Real-time updates via SSE
   useEffect(() => {
-    const interval = setInterval(fetchData, 5000);
+    let es;
+    const connect = () => {
+      es = new EventSource('/api/events');
+      es.onmessage = () => fetchData();
+      es.onerror = () => { es.close(); setTimeout(connect, 3000); };
+    };
+    connect();
     const onFocus = () => fetchData();
     window.addEventListener('focus', onFocus);
-    return () => { clearInterval(interval); window.removeEventListener('focus', onFocus); };
+    return () => { es.close(); window.removeEventListener('focus', onFocus); };
   }, [fetchData]);
   useEffect(() => { save('tc-dark', dark); document.documentElement.classList.toggle('dark', dark); }, [dark]);
 
