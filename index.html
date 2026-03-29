@@ -179,30 +179,29 @@ function CategoryChart({ expenses }) {
   );
 }
 
-function QRCode() {
-  const [show, setShow] = useState(false);
+function QRModal({ onClose }) {
   const url = window.location.href;
   const qrRef = useRef(null);
 
   useEffect(() => {
-    if (show && qrRef.current) {
+    if (qrRef.current) {
       qrRef.current.innerHTML = '';
       const qr = qrcode(0, 'M');
       qr.addData(url);
       qr.make();
       const modules = qr.getModuleCount();
-      const cellSize = Math.floor(200 / modules);
+      const cellSize = Math.floor(180 / modules);
       const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
       const totalSize = modules * cellSize;
-      svg.setAttribute('width', '200');
-      svg.setAttribute('height', '200');
+      svg.setAttribute('width', totalSize.toString());
+      svg.setAttribute('height', totalSize.toString());
       svg.setAttribute('viewBox', `0 0 ${totalSize} ${totalSize}`);
-      for (let r = 0; r < modules; r++) {
-        for (let c = 0; c < modules; c++) {
-          if (qr.isDark(r, c)) {
+      for (let row = 0; row < modules; row++) {
+        for (let col = 0; col < modules; col++) {
+          if (qr.isDark(row, col)) {
             const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            rect.setAttribute('x', c * cellSize);
-            rect.setAttribute('y', r * cellSize);
+            rect.setAttribute('x', col * cellSize);
+            rect.setAttribute('y', row * cellSize);
             rect.setAttribute('width', cellSize);
             rect.setAttribute('height', cellSize);
             rect.setAttribute('fill', '#000');
@@ -212,25 +211,18 @@ function QRCode() {
       }
       qrRef.current.appendChild(svg);
     }
-  }, [show, url]);
+  }, [url]);
 
   return (
-    <>
-      <button onClick={() => setShow(true)} className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="QR Code">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4"/><line x1="22" y1="18" x2="22" y2="22"/><line x1="18" y1="22" x2="22" y2="22"/></svg>
-      </button>
-      {show && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center fade-in" onClick={() => setShow(false)}>
-          <div className="absolute inset-0 bg-black/40" />
-          <div className="relative bg-white dark:bg-zinc-800 rounded-2xl p-6 text-center slide-up" onClick={e => e.stopPropagation()}>
-            <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">Quét để mở trên điện thoại</h3>
-            <div ref={qrRef} className="mx-auto w-[220px] h-[220px] bg-white rounded-lg p-3 flex items-center justify-center overflow-visible" />
-            <p className="text-xs text-zinc-400 mt-3 max-w-[200px] mx-auto break-all">{url}</p>
-            <button onClick={() => setShow(false)} className="mt-4 px-4 py-2 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors">Đóng</button>
-          </div>
-        </div>
-      )}
-    </>
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center fade-in" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60" />
+      <div className="relative bg-white dark:bg-zinc-800 rounded-2xl p-8 text-center slide-up shadow-2xl m-4" onClick={e => e.stopPropagation()}>
+        <h3 className="text-base font-semibold text-zinc-800 dark:text-zinc-200 mb-4">Quét để mở trên điện thoại</h3>
+        <div ref={qrRef} className="mx-auto bg-white rounded-xl p-4 inline-flex items-center justify-center" />
+        <p className="text-xs text-zinc-400 mt-4 max-w-[250px] mx-auto break-all">{url}</p>
+        <button onClick={onClose} className="mt-5 px-6 py-2.5 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors font-medium">Đóng</button>
+      </div>
+    </div>
   );
 }
 
@@ -377,6 +369,7 @@ function App() {
   const [month, setMonth] = useState(() => today().slice(0, 7));
   const [modal, setModal] = useState(null); // null | 'new' | expense
   const [filterCat, setFilterCat] = useState('all');
+  const [showQR, setShowQR] = useState(false);
 
   useEffect(() => { save('tc-expenses', expenses); }, [expenses]);
   useEffect(() => { save('tc-budgets', budgets); }, [budgets]);
@@ -437,7 +430,9 @@ function App() {
             <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Thu Chi</h1>
           </div>
           <div className="flex items-center gap-1">
-            <QRCode />
+            <button onClick={() => setShowQR(true)} className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="QR Code">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4"/><line x1="22" y1="18" x2="22" y2="22"/><line x1="18" y1="22" x2="22" y2="22"/></svg>
+            </button>
             <ExportButton expenses={monthExpenses} />
             <button onClick={() => setDark(!dark)}
               className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
@@ -507,6 +502,9 @@ function App() {
           Thêm chi tiêu
         </button>
       </div>
+
+      {/* QR Modal */}
+      {showQR && <QRModal onClose={() => setShowQR(false)} />}
 
       {/* Modal */}
       {modal && (
