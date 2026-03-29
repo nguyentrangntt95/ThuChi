@@ -393,6 +393,13 @@ function App() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+  // Auto-refresh every 5 seconds
+  useEffect(() => {
+    const interval = setInterval(fetchData, 5000);
+    const onFocus = () => fetchData();
+    window.addEventListener('focus', onFocus);
+    return () => { clearInterval(interval); window.removeEventListener('focus', onFocus); };
+  }, [fetchData]);
   useEffect(() => { save('tc-dark', dark); document.documentElement.classList.toggle('dark', dark); }, [dark]);
 
   const monthExpenses = useMemo(() =>
