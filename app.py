@@ -3,12 +3,12 @@ import re
 import json
 import time
 import queue
+import base64
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, send_file, Response
-from PIL import Image
-import pytesseract
-import io
+import anthropic
+from datetime import date
 
 app = Flask(__name__)
 
@@ -51,74 +51,88 @@ def init_db():
     cur.close()
     conn.close()
 
-# ── OCR helpers ──
+# ── AI Receipt Scanner ──
 
-CAT_KEYWORDS = {
-    'food': ['cafe','coffee','cà phê','trà','tea','cơm','phở','bún','mì','bánh','ăn','nhà hàng','quán','food','grab food','shopeefood','gà','bò','heo','cá','tôm','lẩu','nước','sinh tố','kem','pizza','burger','sushi','beer','bia','rượu','ăn sáng','ăn trưa','ăn tối','highland','starbucks','cheese','xôi','hủ tiếu','cháo','kfc','lotteria','jollibee','gong cha','tocotoco','phúc long','the coffee house','circle k','ministop','gs25','family mart','7-eleven','bách hóa xanh'],
-    'transport': ['grab','taxi','xăng','gojek','be','uber','parking','đỗ xe','gửi xe','vé xe','xe buýt','bus','toll','phí cầu','sân bay','vé máy bay','tàu','metro'],
-    'shopping': ['shopee','lazada','tiki','sendo','siêu thị','vinmart','coopmart','big c','lotte mart','aeon','quần','áo','giày','dép','túi','mỹ phẩm','đồ gia dụng','điện thoại','laptop','máy tính','tai nghe'],
-    'entertainment': ['phim','cinema','cgv','game','karaoke','concert','du lịch','khách sạn','hotel','resort','spa','massage','netflix','spotify'],
-    'bills': ['điện','nước','internet','wifi','thuê nhà','tiền nhà','bảo hiểm','thuế','trả góp','vay','credit','ngân hàng','gas'],
-    'health': ['thuốc','bệnh viện','khám','pharmacy','nhà thuốc','bác sĩ','y tế','răng','mắt','vitamin','gym','yoga','fitness'],
-    'education': ['sách','học','course','khóa học','udemy','coursera','học phí','trường','lớp','gia sư'],
-}
+SCAN_PROMPT = """Bạn là trợ lý phân tích hóa đơn/chi tiêu. Hãy xem ảnh và trích xuất TẤT CẢ các khoản chi tiêu.
 
-BRANDS = ['highland','starbucks','phúc long','the coffee house','tocotoco','gong cha','kfc','lotteria','jollibee','mcdonalds','grab','shopee','lazada','tiki','circle k','ministop','gs25','family mart','7-eleven','vinmart','coopmart','big c','lotte','aeon','cgv','pizza','bách hóa xanh','pharmacity','long châu','an khang']
+Nếu ảnh là 1 hóa đơn/bill duy nhất → trả về 1 khoản.
+Nếu ảnh là sao kê ngân hàng, lịch sử giao dịch, hoặc có nhiều khoản riêng biệt → trả về NHIỀU khoản, mỗi giao dịch 1 khoản.
 
-def classify_category(text):
-    lower = text.lower()
-    best, best_count = 'other', 0
-    for cat, keywords in CAT_KEYWORDS.items():
-        count = sum(1 for kw in keywords if kw in lower)
-        if count > best_count:
-            best_count = count
-            best = cat
-    return best
+Chỉ lấy các khoản CHI (tiền ra), bỏ qua các khoản thu (tiền vào).
 
-def extract_amount(text):
-    patterns = [
-        r'(?:tổng|total|thành tiền|thanh toán|tạm tính|amount|t\.toán)[\s:=]*(\d{1,3}(?:[.,]\d{3})+)',
-        r'(\d{1,3}(?:[.,]\d{3})+)\s*(?:đ|vnd|vnđ|dong)',
-        r'(\d{1,3}(?:[.,]\d{3})+)',
-    ]
-    for pat in patterns:
-        matches = re.findall(pat, text, re.IGNORECASE)
-        amounts = []
-        for m in matches:
-            num = int(m.replace('.', '').replace(',', ''))
-            if 1000 <= num <= 999999999:
-                amounts.append(num)
-        if amounts:
-            return max(amounts)
-    return 0
+Với mỗi khoản, xác định:
+- "date": ngày giao dịch (format YYYY-MM-DD). Nếu không rõ năm thì dùng năm {year}. Nếu không rõ ngày thì dùng "{today}".
+- "category": PHẢI là 1 trong các giá trị sau: food, transport, shopping, entertainment, bills, health, education, other
+- "detail": mô tả ngắn gọn (VD: "Grab đi làm", "Cà phê Highland", "Tiền điện tháng 3"). Viết tự nhiên, dễ hiểu.
+- "amount": số tiền (số nguyên, đơn vị VND, KHÔNG có dấu chấm/phẩy)
 
-def extract_detail(text):
-    lower = text.lower()
-    for b in BRANDS:
-        if b in lower:
-            return b.title()
-    lines = [l.strip() for l in text.split('\n') if 4 <= len(l.strip()) <= 60]
-    junk = re.compile(r'^[\d.,\s%:\/\-\(\)]+$|^\d{1,2}[\/\-]|^(tel|phone|đt|sđt|hotline|fax|email|www|http|địa chỉ|add|tax|mã|no\.|bill|order|inv|receipt|hóa đơn|-----)', re.IGNORECASE)
-    good = [l for l in lines if not junk.match(l)]
-    return good[0][:60] if good else ''
+Trả về JSON array, KHÔNG có text nào khác. Ví dụ:
+[{{"date":"2026-03-29","category":"food","detail":"Cà phê Highland","amount":45000}}]
+
+Nếu không đọc được gì hữu ích, trả về: []"""
+
+def scan_with_ai(image_bytes, content_type):
+    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
+    b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+
+    today_str = date.today().isoformat()
+    year = date.today().year
+    prompt = SCAN_PROMPT.format(today=today_str, year=year)
+
+    message = client.messages.create(
+        model="claude-sonnet-4-20250514",
+        max_tokens=2000,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": content_type, "data": b64}},
+                {"type": "text", "text": prompt}
+            ]
+        }]
+    )
+
+    text = message.content[0].text.strip()
+    # Extract JSON from response
+    if text.startswith("```"):
+        text = re.sub(r'^```\w*\n?', '', text)
+        text = re.sub(r'\n?```$', '', text)
+
+    items = json.loads(text)
+    if not isinstance(items, list):
+        items = [items]
+
+    # Validate
+    valid_cats = {'food','transport','shopping','entertainment','bills','health','education','other'}
+    result = []
+    for item in items:
+        cat = item.get('category', 'other')
+        if cat not in valid_cats:
+            cat = 'other'
+        amt = int(item.get('amount', 0))
+        if amt <= 0:
+            continue
+        result.append({
+            'date': item.get('date', today_str),
+            'category': cat,
+            'detail': item.get('detail', '')[:80],
+            'amount': amt,
+        })
+    return result
 
 @app.route("/api/scan", methods=["POST"])
 def scan_receipt():
     if 'image' not in request.files:
         return jsonify({"error": "No image"}), 400
+
     file = request.files['image']
-    img = Image.open(io.BytesIO(file.read()))
-    # Resize for speed: max 1200px wide
-    if img.width > 1200:
-        ratio = 1200 / img.width
-        img = img.resize((1200, int(img.height * ratio)))
-    # Convert to grayscale for better OCR
-    img = img.convert('L')
-    text = pytesseract.image_to_string(img, lang='vie+eng', config='--psm 6')
-    amount = extract_amount(text)
-    category = classify_category(text)
-    detail = extract_detail(text)
-    return jsonify({"amount": amount, "category": category, "detail": detail, "rawText": text})
+    image_bytes = file.read()
+    content_type = file.content_type or 'image/jpeg'
+
+    try:
+        items = scan_with_ai(image_bytes, content_type)
+        return jsonify({"items": items})
+    except Exception as e:
+        return jsonify({"error": str(e), "items": []}), 500
 
 # SSE endpoint
 @app.route("/api/events")
@@ -175,6 +189,24 @@ def add_expense():
     conn.close()
     notify_clients()
     return jsonify({"ok": True}), 201
+
+@app.route("/api/expenses/bulk", methods=["POST"])
+def add_expenses_bulk():
+    items = request.json.get("items", [])
+    if not items:
+        return jsonify({"ok": False}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    for data in items:
+        cur.execute(
+            "INSERT INTO expenses (id, date, category, detail, amount) VALUES (%s, %s, %s, %s, %s)",
+            (data["id"], data["date"], data["category"], data.get("detail", ""), data["amount"])
+        )
+    conn.commit()
+    cur.close()
+    conn.close()
+    notify_clients()
+    return jsonify({"ok": True, "count": len(items)}), 201
 
 @app.route("/api/expenses/<eid>", methods=["PUT"])
 def update_expense(eid):

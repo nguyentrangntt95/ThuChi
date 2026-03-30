@@ -43,70 +43,13 @@ const fmt = (n) => new Intl.NumberFormat('vi-VN').format(n);
 const today = () => new Date().toISOString().slice(0, 10);
 const monthOf = (d) => d.slice(0, 7);
 
-// ── OCR & Auto-categorize ──
-const CAT_KEYWORDS = {
-  food: ['cafe','coffee','cà phê','trà','tea','cơm','phở','bún','mì','bánh','ăn','nhà hàng','quán','food','grab food','shopeefood','bếp','gà','bò','heo','cá','tôm','lẩu','nước','sinh tố','kem','pizza','burger','sushi','beer','bia','rượu','đồ uống','ăn sáng','ăn trưa','ăn tối','highland','starbucks','cheese','gỏi','chả','xôi','hủ tiếu','cháo','kfc','lotteria','mcdonalds','jollibee','gong cha','tocotoco','phúc long','the coffee house'],
-  transport: ['grab','taxi','xăng','gojek','be','uber','parking','đỗ xe','gửi xe','vé xe','xe buýt','bus','xe máy','ô tô','toll','phí cầu đường','sân bay','vé máy bay','railway','tàu','metro'],
-  shopping: ['shopee','lazada','tiki','sendo','siêu thị','vinmart','bách hóa','coopmart','big c','lotte','aeon','quần','áo','giày','dép','túi','mỹ phẩm','son','kem chống','đồ gia dụng','nội thất','điện thoại','laptop','máy tính','tai nghe'],
-  entertainment: ['phim','cinema','cgv','lotte cinema','game','karaoke','nhạc','concert','show','vé','du lịch','khách sạn','hotel','resort','spa','massage','netflix','spotify','youtube'],
-  bills: ['điện','nước','internet','wifi','thuê nhà','tiền nhà','phí quản lý','bảo hiểm','thuế','trả góp','vay','credit','thẻ','ngân hàng','chuyển khoản','gas'],
-  health: ['thuốc','bệnh viện','khám','pharmacy','nhà thuốc','bác sĩ','doctor','y tế','răng','mắt','vitamin','thực phẩm chức năng','gym','tập','yoga','fitness'],
-  education: ['sách','học','course','khóa học','udemy','coursera','học phí','trường','lớp','gia sư','tiếng anh','english'],
-};
-
-function classifyCategory(text) {
-  const lower = text.toLowerCase();
-  let best = 'other', bestCount = 0;
-  for (const [cat, keywords] of Object.entries(CAT_KEYWORDS)) {
-    let count = 0;
-    for (const kw of keywords) {
-      if (lower.includes(kw)) count++;
-    }
-    if (count > bestCount) { bestCount = count; best = cat; }
-  }
-  return best;
-}
-
-function extractAmount(text) {
-  // Match Vietnamese currency patterns: 50.000, 50,000, 50000đ, 50.000 VND, etc.
-  const patterns = [
-    /(\d{1,3}(?:[.,]\d{3})+)\s*(?:đ|vnd|vnđ|dong)/gi,
-    /(?:tổng|total|thành tiền|thanh toán|amount|giá|price)[\s:]*(\d{1,3}(?:[.,]\d{3})+)/gi,
-    /(\d{1,3}(?:[.,]\d{3})+)\s*(?:đ|vnd)/gi,
-    /(\d{1,3}(?:[.,]\d{3})+)/g,
-  ];
-  let amounts = [];
-  for (const pat of patterns) {
-    let m;
-    while ((m = pat.exec(text)) !== null) {
-      const num = parseInt(m[1].replace(/[.,]/g, ''));
-      if (num >= 1000 && num <= 999999999) amounts.push(num);
-    }
-    if (amounts.length > 0) break;
-  }
-  // Return the largest amount (likely the total)
-  return amounts.length > 0 ? Math.max(...amounts) : 0;
-}
-
-function extractDetail(text) {
-  const lower = text.toLowerCase();
-  // Try to find a known brand/store name first
-  const brands = ['highland','starbucks','phúc long','the coffee house','tocotoco','gong cha','kfc','lotteria','jollibee','mcdonalds','grab','shopee','lazada','tiki','circle k','ministop','gs25','family mart','7-eleven','vinmart','coopmart','big c','lotte','aeon','cgv','pizza','bách hóa xanh'];
-  for (const b of brands) {
-    if (lower.includes(b)) return b.charAt(0).toUpperCase() + b.slice(1);
-  }
-  // Otherwise find the best line: skip junk like addresses, dates, numbers, short garbage
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length >= 4 && l.length <= 60);
-  const junk = /^[\d.,\s%:\/\-\(\)]+$|^\d{1,2}[\/\-]|^(tel|phone|đt|sđt|hotline|fax|email|www|http|địa chỉ|add|tax|mã|no\.|bill|order|inv|receipt|hóa đơn)/i;
-  const good = lines.filter(l => !junk.test(l));
-  return good.length > 0 ? good[0].slice(0, 60) : '';
-}
-
-async function processImage(file) {
+// ── AI Receipt Scanner ──
+async function scanImage(file) {
   const formData = new FormData();
   formData.append('image', file);
   const res = await fetch('/api/scan', { method: 'POST', body: formData });
-  return res.json();
+  const data = await res.json();
+  return data.items || [];
 }
 
 const CATEGORIES = [
@@ -381,13 +324,14 @@ function ExpenseRow({ expense, onEdit, onDelete }) {
   );
 }
 
-function ExpenseForm({ expense, onSave, onClose }) {
+function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
   const [date, setDate] = useState(expense?.date || today());
   const [category, setCategory] = useState(expense?.category || 'food');
   const [detail, setDetail] = useState(expense?.detail || '');
   const [amount, setAmount] = useState(expense?.amount?.toString() || '');
   const [scanning, setScanning] = useState(false);
   const [scanPreview, setScanPreview] = useState(null);
+  const [scanResults, setScanResults] = useState(null); // multi-item preview
   const fileRef = useRef(null);
   const amountRef = useRef(null);
 
@@ -396,16 +340,31 @@ function ExpenseForm({ expense, onSave, onClose }) {
     if (!file) return;
     setScanPreview(URL.createObjectURL(file));
     setScanning(true);
+    setScanResults(null);
     try {
-      const result = await processImage(file);
-      if (result.amount) setAmount(result.amount.toString());
-      if (result.category) setCategory(result.category);
-      if (result.detail) setDetail(result.detail);
+      const items = await scanImage(file);
+      if (items.length > 1) {
+        // Multiple items - show preview to confirm
+        setScanResults(items);
+      } else if (items.length === 1) {
+        // Single item - fill form
+        const item = items[0];
+        if (item.amount) setAmount(item.amount.toString());
+        if (item.category) setCategory(item.category);
+        if (item.detail) setDetail(item.detail);
+        if (item.date) setDate(item.date);
+      }
     } catch (err) {
       console.error('Scan error:', err);
     }
     setScanning(false);
     if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const handleSaveBulk = () => {
+    if (scanResults && scanResults.length > 0) {
+      onSaveBulk(scanResults);
+    }
   };
 
   const handleSave = () => {
@@ -452,7 +411,34 @@ function ExpenseForm({ expense, onSave, onClose }) {
             {scanPreview && !scanning && (
               <div className="mt-2 relative inline-block">
                 <img src={scanPreview} className="h-20 rounded-lg object-cover" />
-                <button onClick={() => setScanPreview(null)} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-600 text-white rounded-full text-xs flex items-center justify-center">&times;</button>
+                <button onClick={() => { setScanPreview(null); setScanResults(null); }} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-600 text-white rounded-full text-xs flex items-center justify-center">&times;</button>
+              </div>
+            )}
+            {/* Multi-item scan results */}
+            {scanResults && scanResults.length > 1 && (
+              <div className="mt-3 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 mb-2">
+                  Phát hiện {scanResults.length} khoản chi tiêu:
+                </p>
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {scanResults.map((item, i) => {
+                    const cat = catMap[item.category] || catMap.other;
+                    return (
+                      <div key={i} className="flex items-center gap-2 text-xs bg-white dark:bg-zinc-800 rounded-lg px-2.5 py-2">
+                        <span>{cat.emoji}</span>
+                        <span className="flex-1 truncate text-zinc-700 dark:text-zinc-300">{item.detail || cat.name}</span>
+                        <span className="text-zinc-400">{item.date.slice(5)}</span>
+                        <span className="font-semibold text-zinc-800 dark:text-zinc-200">{fmt(item.amount)}đ</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <button onClick={() => setScanResults(null)} className="flex-1 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 text-xs font-medium">Hủy</button>
+                  <button onClick={handleSaveBulk} className="flex-1 py-2 rounded-lg bg-emerald-500 text-white text-xs font-medium hover:bg-emerald-600 transition-colors">
+                    Thêm tất cả ({scanResults.length})
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -617,6 +603,13 @@ function App() {
     await api(`/api/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) });
   };
 
+  const addBulkExpenses = async (items) => {
+    const newItems = items.map(item => ({ id: uid(), ...item }));
+    setExpenses(prev => [...prev, ...newItems]);
+    setModal(null);
+    await api('/api/expenses/bulk', { method: 'POST', body: JSON.stringify({ items: newItems }) });
+  };
+
   const deleteExpense = async (id) => {
     setExpenses(prev => prev.filter(e => e.id !== id));
     await api(`/api/expenses/${id}`, { method: 'DELETE' });
@@ -734,6 +727,7 @@ function App() {
         <ExpenseForm
           expense={modal === 'new' ? null : modal}
           onSave={modal === 'new' ? addExpense : updateExpense}
+          onSaveBulk={addBulkExpenses}
           onClose={() => setModal(null)}
         />
       )}
