@@ -5,14 +5,13 @@ import time
 import queue
 import base64
 import psycopg2
+import requests as http_requests
 from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, send_file, Response
-import anthropic
 from datetime import date
 
 app = Flask(__name__)
 
-# SSE: list of queues, one per connected client
 clients = []
 
 def notify_clients():
@@ -51,7 +50,7 @@ def init_db():
     cur.close()
     conn.close()
 
-# ── AI Receipt Scanner ──
+# ── AI Receipt Scanner (Google Gemini) ──
 
 SCAN_PROMPT = """Bạn là trợ lý phân tích hóa đơn/chi tiêu. Hãy xem ảnh và trích xuất TẤT CẢ các khoản chi tiêu.
 
@@ -62,37 +61,40 @@ Chỉ lấy các khoản CHI (tiền ra), bỏ qua các khoản thu (tiền vào
 
 Với mỗi khoản, xác định:
 - "date": ngày giao dịch (format YYYY-MM-DD). Nếu không rõ năm thì dùng năm {year}. Nếu không rõ ngày thì dùng "{today}".
-- "category": PHẢI là 1 trong các giá trị sau: food, transport, shopping, entertainment, bills, health, education, other
-- "detail": mô tả ngắn gọn (VD: "Grab đi làm", "Cà phê Highland", "Tiền điện tháng 3"). Viết tự nhiên, dễ hiểu.
+- "category": PHẢI là 1 trong: food, transport, shopping, entertainment, bills, health, education, other
+- "detail": mô tả ngắn gọn bằng tiếng Việt (VD: "Grab đi làm", "Cà phê Highland", "Tiền điện tháng 3")
 - "amount": số tiền (số nguyên, đơn vị VND, KHÔNG có dấu chấm/phẩy)
 
-Trả về JSON array, KHÔNG có text nào khác. Ví dụ:
+CHỈ trả về JSON array, KHÔNG có text nào khác:
 [{{"date":"2026-03-29","category":"food","detail":"Cà phê Highland","amount":45000}}]
 
 Nếu không đọc được gì hữu ích, trả về: []"""
 
-def scan_with_ai(image_bytes, content_type):
-    client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", ""))
-    b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+def scan_with_gemini(image_bytes, content_type):
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
 
+    b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
     today_str = date.today().isoformat()
     year = date.today().year
     prompt = SCAN_PROMPT.format(today=today_str, year=year)
 
-    message = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=2000,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": content_type, "data": b64}},
-                {"type": "text", "text": prompt}
+    payload = {
+        "contents": [{
+            "parts": [
+                {"inline_data": {"mime_type": content_type, "data": b64}},
+                {"text": prompt}
             ]
-        }]
-    )
+        }],
+        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2000}
+    }
 
-    text = message.content[0].text.strip()
-    # Extract JSON from response
+    resp = http_requests.post(url, json=payload, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+
+    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    # Extract JSON
     if text.startswith("```"):
         text = re.sub(r'^```\w*\n?', '', text)
         text = re.sub(r'\n?```$', '', text)
@@ -101,7 +103,6 @@ def scan_with_ai(image_bytes, content_type):
     if not isinstance(items, list):
         items = [items]
 
-    # Validate
     valid_cats = {'food','transport','shopping','entertainment','bills','health','education','other'}
     result = []
     for item in items:
@@ -123,18 +124,16 @@ def scan_with_ai(image_bytes, content_type):
 def scan_receipt():
     if 'image' not in request.files:
         return jsonify({"error": "No image"}), 400
-
     file = request.files['image']
     image_bytes = file.read()
     content_type = file.content_type or 'image/jpeg'
-
     try:
-        items = scan_with_ai(image_bytes, content_type)
+        items = scan_with_gemini(image_bytes, content_type)
         return jsonify({"items": items})
     except Exception as e:
         return jsonify({"error": str(e), "items": []}), 500
 
-# SSE endpoint
+# SSE
 @app.route("/api/events")
 def events():
     def stream():
@@ -154,7 +153,6 @@ def events():
         "X-Accel-Buffering": "no",
     })
 
-# Serve frontend
 @app.route("/")
 def index():
     return send_file("index.html")
@@ -163,13 +161,9 @@ def index():
 
 @app.route("/api/expenses")
 def list_expenses():
-    month = request.args.get("month")
     conn = get_db()
     cur = conn.cursor()
-    if month:
-        cur.execute("SELECT * FROM expenses WHERE substring(date,1,7) = %s ORDER BY date DESC, created_at DESC", (month,))
-    else:
-        cur.execute("SELECT * FROM expenses ORDER BY date DESC, created_at DESC")
+    cur.execute("SELECT * FROM expenses ORDER BY date DESC, created_at DESC")
     rows = cur.fetchall()
     cur.close()
     conn.close()
