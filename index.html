@@ -4,38 +4,217 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Thu Chi - Quản lý chi tiêu</title>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-<script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
-<script>
-tailwind.config = {
-  darkMode: 'class',
-  theme: { extend: { fontFamily: { sans: ['system-ui', '-apple-system', 'sans-serif'] } } }
-}
-</script>
 <style>
+/* Animations */
 @keyframes slideUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
 @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
+@keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
 .slide-up { animation: slideUp 0.25s ease-out; }
 .fade-in { animation: fadeIn 0.2s ease-out; }
-body { margin:0; min-height:100vh; }
+.animate-spin { animation: spin 1s linear infinite; }
+
+/* Base */
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;min-height:100vh;font-family:system-ui,-apple-system,sans-serif}
 input[type="number"]::-webkit-inner-spin-button,
-input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
-input[type="number"] { -moz-appearance: textfield; }
+input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type="number"]{-moz-appearance:textfield}
+
+/* Scrollbar */
+.scrollbar-none{-ms-overflow-style:none;scrollbar-width:none}
+.scrollbar-none::-webkit-scrollbar{display:none}
+
+/* Layout */
+.hidden{display:none}.block{display:block}.flex{display:flex}.inline-flex{display:inline-flex}.grid{display:grid}
+.relative{position:relative}.absolute{position:absolute}.fixed{position:fixed}.sticky{position:sticky}
+.inset-0{top:0;right:0;bottom:0;left:0}.top-0{top:0}.right-0{right:0}.bottom-0{bottom:0}.left-0{left:0}
+.top-\[57px\]{top:57px}.bottom-6{bottom:1.5rem}
+.-top-1\.5{top:-0.375rem}.-right-1\.5{right:-0.375rem}
+.z-10{z-index:10}.z-30{z-index:30}.z-40{z-index:40}.z-50{z-index:50}.z-\[9999\]{z-index:9999}
+.overflow-hidden{overflow:hidden}.overflow-x-auto{overflow-x:auto}.overflow-y-auto{overflow-y:auto}
+
+/* Flexbox & Grid */
+.flex-1{flex:1 1 0%}.flex-col{flex-direction:column}.shrink-0{flex-shrink:0}
+.items-center{align-items:center}.items-end{align-items:flex-end}
+.justify-center{justify-content:center}.justify-between{justify-content:space-between}
+.grid-cols-4{grid-template-columns:repeat(4,minmax(0,1fr))}
+
+/* Gap & Spacing */
+.gap-1{gap:.25rem}.gap-1\.5{gap:.375rem}.gap-2{gap:.5rem}.gap-3{gap:.75rem}.gap-4{gap:1rem}
+.space-y-1\.5>:not([hidden])~:not([hidden]){margin-top:.375rem}
+
+/* Sizing */
+.w-2\.5{width:.625rem}.w-5{width:1.25rem}.w-9{width:2.25rem}.w-20{width:5rem}.w-28{width:7rem}.w-full{width:100%}
+.h-1\.5{height:.375rem}.h-2\.5{height:.625rem}.h-5{height:1.25rem}.h-9{height:2.25rem}.h-20{height:5rem}.h-full{height:100%}
+.min-h-screen{min-height:100vh}.min-w-0{min-width:0}
+.max-w-lg{max-width:32rem}.max-w-md{max-width:28rem}.max-w-\[250px\]{max-width:250px}
+.max-h-48{max-height:12rem}.max-h-\[90vh\]{max-height:90vh}
+
+/* Padding */
+.p-2{padding:.5rem}.p-3{padding:.75rem}.p-4{padding:1rem}.p-5{padding:1.25rem}.p-8{padding:2rem}
+.px-2{padding-left:.5rem;padding-right:.5rem}.px-2\.5{padding-left:.625rem;padding-right:.625rem}
+.px-3{padding-left:.75rem;padding-right:.75rem}.px-4{padding-left:1rem;padding-right:1rem}
+.px-5{padding-left:1.25rem;padding-right:1.25rem}.px-6{padding-left:1.5rem;padding-right:1.5rem}
+.py-0\.5{padding-top:.125rem;padding-bottom:.125rem}.py-1{padding-top:.25rem;padding-bottom:.25rem}
+.py-1\.5{padding-top:.375rem;padding-bottom:.375rem}.py-2{padding-top:.5rem;padding-bottom:.5rem}
+.py-2\.5{padding-top:.625rem;padding-bottom:.625rem}.py-3{padding-top:.75rem;padding-bottom:.75rem}
+.py-16{padding-top:4rem;padding-bottom:4rem}.pt-3{padding-top:.75rem}.pb-1{padding-bottom:.25rem}
+.pb-2{padding-bottom:.5rem}.pb-24{padding-bottom:6rem}
+
+/* Margin */
+.m-4{margin:1rem}.mx-4{margin-left:1rem;margin-right:1rem}.mx-auto{margin-left:auto;margin-right:auto}
+.mt-1{margin-top:.25rem}.mt-2{margin-top:.5rem}.mt-3{margin-top:.75rem}.mt-4{margin-top:1rem}.mt-5{margin-top:1.25rem}
+.mb-0\.5{margin-bottom:.125rem}.mb-1{margin-bottom:.25rem}.mb-1\.5{margin-bottom:.375rem}
+.mb-2{margin-bottom:.5rem}.mb-3{margin-bottom:.75rem}.mb-4{margin-bottom:1rem}.mb-5{margin-bottom:1.25rem}
+.ml-auto{margin-left:auto}
+
+/* Typography */
+.text-\[8px\]{font-size:8px;line-height:1}.text-\[11px\]{font-size:11px;line-height:1}
+.text-xs{font-size:.75rem;line-height:1rem}.text-sm{font-size:.875rem;line-height:1.25rem}
+.text-base{font-size:1rem;line-height:1.5rem}.text-lg{font-size:1.125rem;line-height:1.75rem}
+.text-5xl{font-size:3rem;line-height:1}
+.font-bold{font-weight:700}.font-semibold{font-weight:600}.font-medium{font-weight:500}.font-normal{font-weight:400}
+.text-center{text-align:center}.text-right{text-align:right}.uppercase{text-transform:uppercase}
+.tracking-tight{letter-spacing:-.025em}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.whitespace-nowrap{white-space:nowrap}.break-all{word-break:break-all}
+
+/* Text Colors */
+.text-white{color:#fff}.text-red-500{color:#ef4444}.text-amber-500{color:#f59e0b}
+.text-emerald-600{color:#059669}.text-emerald-700{color:#047857}
+.text-zinc-300{color:#d4d4d8}.text-zinc-400{color:#a1a1aa}.text-zinc-500{color:#71717a}
+.text-zinc-600{color:#52525b}.text-zinc-700{color:#3f3f46}.text-zinc-800{color:#27272a}.text-zinc-900{color:#18181b}
+
+/* Backgrounds */
+.bg-white{background-color:#fff}.bg-white\/80{background-color:rgb(255 255 255/.8)}
+.bg-black\/40{background-color:rgb(0 0 0/.4)}.bg-black\/60{background-color:rgb(0 0 0/.6)}
+.bg-red-500{background-color:#ef4444}.bg-amber-500{background-color:#f59e0b}
+.bg-emerald-50{background-color:#ecfdf5}.bg-emerald-500{background-color:#10b981}
+.bg-zinc-50{background-color:#fafafa}.bg-zinc-100{background-color:#f4f4f5}
+.bg-zinc-600{background-color:#52525b}.bg-zinc-800{background-color:#27272a}.bg-zinc-900{background-color:#18181b}
+.bg-orange-500{background-color:#f97316}.bg-blue-500{background-color:#3b82f6}
+.bg-pink-500{background-color:#ec4899}.bg-purple-500{background-color:#a855f7}
+.bg-yellow-500{background-color:#eab308}.bg-green-500{background-color:#22c55e}
+.bg-indigo-500{background-color:#6366f1}.bg-zinc-500{background-color:#71717a}
+
+/* SVG Fill */
+.fill-white{fill:#fff}.fill-zinc-400{fill:#a1a1aa}.fill-zinc-800{fill:#27272a}
+
+/* Borders */
+.border{border-width:1px;border-style:solid}.border-2{border-width:2px;border-style:solid}
+.border-b{border-bottom-width:1px;border-bottom-style:solid}
+.border-dashed{border-style:dashed}
+.rounded{border-radius:.25rem}.rounded-lg{border-radius:.5rem}.rounded-xl{border-radius:.75rem}
+.rounded-2xl{border-radius:1rem}.rounded-full{border-radius:9999px}
+.rounded-t-2xl{border-top-left-radius:1rem;border-top-right-radius:1rem}
+.border-emerald-200{border-color:#a7f3d0}.border-emerald-300{border-color:#6ee7b7}
+.border-emerald-500{border-color:#10b981}
+.border-zinc-100{border-color:#f4f4f5}.border-zinc-200{border-color:#e4e4e7}.border-zinc-300{border-color:#d4d4d8}
+
+/* Ring & Focus */
+:root{--tw-ring-color:#3b82f6}
+.ring-1{box-shadow:0 0 0 1px var(--tw-ring-color)}.ring-emerald-500{--tw-ring-color:#10b981}
+.focus\:outline-none:focus{outline:2px solid transparent;outline-offset:2px}
+.focus\:ring-1:focus{box-shadow:0 0 0 1px var(--tw-ring-color)}
+.focus\:ring-2:focus{box-shadow:0 0 0 2px var(--tw-ring-color)}
+.focus\:ring-emerald-500:focus{--tw-ring-color:#10b981}
+
+/* Shadows */
+.shadow-lg{box-shadow:0 10px 15px -3px rgb(0 0 0/.1),0 4px 6px -4px rgb(0 0 0/.1)}
+.shadow-2xl{box-shadow:0 25px 50px -12px rgb(0 0 0/.25)}
+.shadow-emerald-500\/25{box-shadow:0 10px 15px -3px rgb(16 185 129/.25),0 4px 6px -4px rgb(16 185 129/.25)}
+
+/* Effects */
+.opacity-0{opacity:0}.object-cover{object-fit:cover}
+.backdrop-blur-md{backdrop-filter:blur(12px)}
+
+/* Transitions */
+.transition-colors{transition-property:color,background-color,border-color,fill,stroke;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:150ms}
+.transition-all{transition-property:all;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:150ms}
+.transition-transform{transition-property:transform;transition-timing-function:cubic-bezier(.4,0,.2,1);transition-duration:150ms}
+.duration-500{transition-duration:500ms}
+
+/* Pseudo-classes */
+.last\:border-0:last-child{border-width:0}
+.disabled\:opacity-40:disabled{opacity:.4}
+.placeholder\:text-zinc-400::placeholder{color:#a1a1aa}
+.placeholder\:text-base::placeholder{font-size:1rem;line-height:1.5rem}
+.placeholder\:font-normal::placeholder{font-weight:400}
+
+/* Hover */
+.hover\:bg-emerald-50:hover{background-color:#ecfdf5}
+.hover\:bg-emerald-600:hover{background-color:#059669}
+.hover\:bg-red-50:hover{background-color:#fef2f2}
+.hover\:bg-zinc-50:hover{background-color:#fafafa}
+.hover\:bg-zinc-100:hover{background-color:#f4f4f5}
+.hover\:bg-zinc-200:hover{background-color:#e4e4e7}
+.hover\:border-emerald-400:hover{border-color:#34d399}
+.hover\:text-emerald-600:hover{color:#059669}
+.hover\:text-red-500:hover{color:#ef4444}
+.hover\:text-zinc-600:hover{color:#52525b}
+.hover\:shadow-emerald-500\/40:hover{box-shadow:0 10px 15px -3px rgb(16 185 129/.4),0 4px 6px -4px rgb(16 185 129/.4)}
+
+/* Focus */
+/* Active */
+.active\:scale-95:active{transform:scale(.95)}
+
+/* Responsive sm */
+@media(min-width:640px){
+  .sm\:items-center{align-items:center}
+  .sm\:rounded-2xl{border-radius:1rem}
+}
+
+/* Dark mode */
+.dark .dark\:bg-zinc-700{background-color:#3f3f46}
+.dark .dark\:bg-zinc-800{background-color:#27272a}
+.dark .dark\:bg-zinc-900{background-color:#18181b}
+.dark .dark\:bg-zinc-900\/80{background-color:rgb(24 24 27/.8)}
+.dark .dark\:bg-zinc-200{background-color:#e4e4e7}
+.dark .dark\:bg-emerald-900\/20{background-color:rgb(6 78 59/.2)}
+.dark .dark\:bg-emerald-900\/30{background-color:rgb(6 78 59/.3)}
+.dark .dark\:text-zinc-100{color:#f4f4f5}
+.dark .dark\:text-zinc-200{color:#e4e4e7}
+.dark .dark\:text-zinc-300{color:#d4d4d8}
+.dark .dark\:text-zinc-400{color:#a1a1aa}
+.dark .dark\:text-zinc-500{color:#71717a}
+.dark .dark\:text-zinc-800{color:#27272a}
+.dark .dark\:text-emerald-300{color:#6ee7b7}
+.dark .dark\:text-emerald-400{color:#34d399}
+.dark .dark\:border-zinc-600{border-color:#52525b}
+.dark .dark\:border-zinc-700{border-color:#3f3f46}
+.dark .dark\:border-zinc-700\/50{border-color:rgb(63 63 70/.5)}
+.dark .dark\:border-zinc-800{border-color:#27272a}
+.dark .dark\:border-emerald-600{border-color:#059669}
+.dark .dark\:border-emerald-800{border-color:#065f46}
+.dark .dark\:fill-zinc-200{fill:#e4e4e7}
+.dark .dark\:fill-zinc-800{fill:#27272a}
+
+/* Dark + Hover */
+.dark .dark\:hover\:bg-zinc-600:hover{background-color:#52525b}
+.dark .dark\:hover\:bg-zinc-700:hover{background-color:#3f3f46}
+.dark .dark\:hover\:bg-zinc-800:hover{background-color:#27272a}
+.dark .dark\:hover\:bg-emerald-900\/30:hover{background-color:rgb(6 78 59/.3)}
+.dark .dark\:hover\:bg-red-900\/30:hover{background-color:rgb(127 29 29/.3)}
+.dark .dark\:hover\:text-zinc-300:hover{color:#d4d4d8}
+.dark .dark\:hover\:text-emerald-400:hover{color:#34d399}
+.dark .dark\:hover\:border-emerald-500:hover{border-color:#10b981}
 </style>
 </head>
 <body>
 <div id="root"></div>
-<script type="text/babel">
-const { useState, useEffect, useMemo, useRef, useCallback } = React;
+<script type="module">
+import { h, render } from 'https://esm.sh/preact@10.19.3';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'https://esm.sh/preact@10.19.3/hooks';
+import htm from 'https://esm.sh/htm@3.1.1';
+
+const html = htm.bind(h);
 
 // ── Helpers ──
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const api = async (path, opts) => {
+const apiCall = async (path, opts) => {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
   return res.json();
 };
@@ -53,16 +232,20 @@ async function scanImage(file) {
 }
 
 const CATEGORIES = [
-  { id: 'food', name: 'Ăn uống', emoji: '🍜', color: 'bg-orange-500', hex: '#f97316' },
-  { id: 'transport', name: 'Di chuyển', emoji: '🚗', color: 'bg-blue-500', hex: '#3b82f6' },
-  { id: 'shopping', name: 'Mua sắm', emoji: '🛍️', color: 'bg-pink-500', hex: '#ec4899' },
-  { id: 'entertainment', name: 'Giải trí', emoji: '🎬', color: 'bg-purple-500', hex: '#a855f7' },
-  { id: 'bills', name: 'Hóa đơn', emoji: '📄', color: 'bg-yellow-500', hex: '#eab308' },
-  { id: 'health', name: 'Sức khỏe', emoji: '💊', color: 'bg-green-500', hex: '#22c55e' },
-  { id: 'education', name: 'Học tập', emoji: '📚', color: 'bg-indigo-500', hex: '#6366f1' },
-  { id: 'other', name: 'Khác', emoji: '📌', color: 'bg-zinc-500', hex: '#71717a' },
+  { id: 'food', name: 'An uong', emoji: '\u{1F35C}', hex: '#f97316' },
+  { id: 'transport', name: 'Di chuyen', emoji: '\u{1F697}', hex: '#3b82f6' },
+  { id: 'shopping', name: 'Mua sam', emoji: '\u{1F6CD}\uFE0F', hex: '#ec4899' },
+  { id: 'entertainment', name: 'Giai tri', emoji: '\u{1F3AC}', hex: '#a855f7' },
+  { id: 'bills', name: 'Hoa don', emoji: '\u{1F4C4}', hex: '#eab308' },
+  { id: 'health', name: 'Suc khoe', emoji: '\u{1F48A}', hex: '#22c55e' },
+  { id: 'education', name: 'Hoc tap', emoji: '\u{1F4DA}', hex: '#6366f1' },
+  { id: 'other', name: 'Khac', emoji: '\u{1F4CC}', hex: '#71717a' },
 ];
 const catMap = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
+
+// Vietnamese names for display
+const CAT_NAMES = {food:'Ăn uống',transport:'Di chuyển',shopping:'Mua sắm',entertainment:'Giải trí',bills:'Hóa đơn',health:'Sức khỏe',education:'Học tập',other:'Khác'};
+CATEGORIES.forEach(c => c.name = CAT_NAMES[c.id]);
 
 // ── Components ──
 
@@ -85,30 +268,30 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
     }},
     { label: 'Năm nay', fn: () => {
       const y = new Date().getFullYear();
-      onChangeFrom(`${y}-01-01`); onChangeTo(today());
+      onChangeFrom(y+'-01-01'); onChangeTo(today());
     }},
     { label: 'Tất cả', fn: () => { onChangeFrom('2000-01-01'); onChangeTo('2099-12-31'); } },
   ];
 
-  return (
-    <div className="px-4 pt-3">
-      <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
-        {presets.map(p => (
-          <button key={p.label} onClick={p.fn}
-            className="shrink-0 px-3 py-1 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 transition-colors">
-            {p.label}
+  return html`
+    <div class="px-4 pt-3">
+      <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+        ${presets.map(p => html`
+          <button key=${p.label} onClick=${p.fn}
+            class="shrink-0 px-3 py-1 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 transition-colors">
+            ${p.label}
           </button>
-        ))}
+        `)}
       </div>
-      <div className="flex items-center gap-2 mt-1">
-        <input type="date" value={from} onChange={e => onChangeFrom(e.target.value)}
-          className="flex-1 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" />
-        <span className="text-zinc-400 text-xs">→</span>
-        <input type="date" value={to} onChange={e => onChangeTo(e.target.value)}
-          className="flex-1 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+      <div class="flex items-center gap-2 mt-1">
+        <input type="date" value=${from} onChange=${e => onChangeFrom(e.target.value)}
+          class="flex-1 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+        <span class="text-zinc-400 text-xs">\u2192</span>
+        <input type="date" value=${to} onChange=${e => onChangeTo(e.target.value)}
+          class="flex-1 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" />
       </div>
     </div>
-  );
+  `;
 }
 
 function BudgetBar({ total, budget, onSetBudget }) {
@@ -124,37 +307,37 @@ function BudgetBar({ total, budget, onSetBudget }) {
     setEditing(false);
   };
 
-  return (
-    <div className="px-4 py-3 bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-xs text-zinc-500 dark:text-zinc-400">
-          Tổng chi: <span className={`font-bold text-sm ${over ? 'text-red-500' : 'text-zinc-800 dark:text-zinc-100'}`}>{fmt(total)}đ</span>
+  return html`
+    <div class="px-4 py-3 bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
+      <div class="flex items-center justify-between mb-1.5">
+        <span class="text-xs text-zinc-500 dark:text-zinc-400">
+          Tổng chi: <span class="font-bold text-sm ${over ? 'text-red-500' : 'text-zinc-800 dark:text-zinc-100'}">${fmt(total)}đ</span>
         </span>
-        {!editing ? (
-          <button onClick={() => { setVal(budget > 0 ? budget.toString() : ''); setEditing(true); }}
-            className="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
-            {budget > 0 ? `Ngân sách: ${fmt(budget)}đ` : '+ Đặt ngân sách'}
+        ${!editing ? html`
+          <button onClick=${() => { setVal(budget > 0 ? budget.toString() : ''); setEditing(true); }}
+            class="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
+            ${budget > 0 ? 'Ngân sách: '+fmt(budget)+'đ' : '+ Đặt ngân sách'}
           </button>
-        ) : (
-          <div className="flex items-center gap-1.5">
-            <input value={val} onChange={e => setVal(e.target.value)} placeholder="VD: 5000000"
-              className="w-28 px-2 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              autoFocus onKeyDown={e => e.key === 'Enter' && handleSave()} />
-            <button onClick={handleSave} className="text-xs text-emerald-600 font-medium">OK</button>
-            <button onClick={() => setEditing(false)} className="text-xs text-zinc-400">Hủy</button>
+        ` : html`
+          <div class="flex items-center gap-1.5">
+            <input value=${val} onInput=${e => setVal(e.target.value)} placeholder="VD: 5000000"
+              class="w-28 px-2 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              autofocus onKeyDown=${e => e.key === 'Enter' && handleSave()} />
+            <button onClick=${handleSave} class="text-xs text-emerald-600 font-medium">OK</button>
+            <button onClick=${() => setEditing(false)} class="text-xs text-zinc-400">Hủy</button>
           </div>
-        )}
+        `}
       </div>
-      {budget > 0 && (
-        <div className="h-1.5 bg-zinc-100 dark:bg-zinc-700 rounded-full overflow-hidden">
-          <div className={`h-full rounded-full transition-all duration-500 ${over ? 'bg-red-500' : warn ? 'bg-amber-500' : 'bg-emerald-500'}`}
-            style={{ width: `${pct}%` }} />
+      ${budget > 0 && html`
+        <div class="h-1.5 bg-zinc-100 dark:bg-zinc-700 rounded-full overflow-hidden">
+          <div class="h-full rounded-full transition-all duration-500 ${over ? 'bg-red-500' : warn ? 'bg-amber-500' : 'bg-emerald-500'}"
+            style="width:${pct}%" />
         </div>
-      )}
-      {over && <p className="text-xs text-red-500 mt-1">⚠️ Vượt ngân sách {fmt(total - budget)}đ</p>}
-      {warn && <p className="text-xs text-amber-500 mt-1">Đã dùng {Math.round(pct)}% ngân sách</p>}
+      `}
+      ${over && html`<p class="text-xs text-red-500 mt-1">\u26A0\uFE0F Vượt ngân sách ${fmt(total - budget)}đ</p>`}
+      ${warn && html`<p class="text-xs text-amber-500 mt-1">Đã dùng ${Math.round(pct)}% ngân sách</p>`}
     </div>
-  );
+  `;
 }
 
 function PieChart({ data, grandTotal }) {
@@ -169,18 +352,18 @@ function PieChart({ data, grandTotal }) {
     const x1 = cx + r * Math.cos(startAngle), y1 = cy + r * Math.sin(startAngle);
     const x2 = cx + r * Math.cos(endAngle), y2 = cy + r * Math.sin(endAngle);
     const path = data.length === 1
-      ? `M ${cx} ${cy-r} A ${r} ${r} 0 1 1 ${cx-0.001} ${cy-r} Z`
-      : `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+      ? 'M '+cx+' '+(cy-r)+' A '+r+' '+r+' 0 1 1 '+(cx-0.001)+' '+(cy-r)+' Z'
+      : 'M '+cx+' '+cy+' L '+x1+' '+y1+' A '+r+' '+r+' 0 '+largeArc+' 1 '+x2+' '+y2+' Z';
     return { ...d, path };
   });
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      {slices.map(s => <path key={s.id} d={s.path} fill={s.hex} opacity="0.85" />)}
-      <circle cx={cx} cy={cy} r="30" className="fill-white dark:fill-zinc-800" />
-      <text x={cx} y={cy-4} textAnchor="middle" className="fill-zinc-800 dark:fill-zinc-200 text-[11px] font-bold">{fmt(grandTotal)}</text>
-      <text x={cx} y={cy+10} textAnchor="middle" className="fill-zinc-400 text-[8px]">VNĐ</text>
+  return html`
+    <svg width=${size} height=${size} viewBox="0 0 ${size} ${size}">
+      ${slices.map(s => html`<path key=${s.id} d=${s.path} fill=${s.hex} opacity="0.85" />`)}
+      <circle cx=${cx} cy=${cy} r="30" class="fill-white dark:fill-zinc-800" />
+      <text x=${cx} y=${cy-4} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200 text-[11px] font-bold">${fmt(grandTotal)}</text>
+      <text x=${cx} y=${cy+10} text-anchor="middle" class="fill-zinc-400 text-[8px]">VNĐ</text>
     </svg>
-  );
+  `;
 }
 
 function CategoryChart({ expenses }) {
@@ -195,23 +378,23 @@ function CategoryChart({ expenses }) {
   if (data.length === 0) return null;
   const grandTotal = data.reduce((s, d) => s + d.total, 0);
 
-  return (
-    <div className="mx-4 mt-4 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
-      <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">Chi tiêu theo danh mục</h3>
-      <div className="flex gap-4 items-center">
-        <PieChart data={data} grandTotal={grandTotal} />
-        <div className="flex-1 space-y-1.5">
-          {data.map(d => (
-            <div key={d.id} className="flex items-center gap-2 text-xs">
-              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: d.hex }}></span>
-              <span className="text-zinc-600 dark:text-zinc-400 truncate">{d.emoji} {d.name}</span>
-              <span className="ml-auto font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">{Math.round(d.total/grandTotal*100)}%</span>
+  return html`
+    <div class="mx-4 mt-4 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">Chi tiêu theo danh mục</h3>
+      <div class="flex gap-4 items-center">
+        <${PieChart} data=${data} grandTotal=${grandTotal} />
+        <div class="flex-1 space-y-1.5">
+          ${data.map(d => html`
+            <div key=${d.id} class="flex items-center gap-2 text-xs">
+              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:${d.hex}"></span>
+              <span class="text-zinc-600 dark:text-zinc-400 truncate">${d.emoji} ${d.name}</span>
+              <span class="ml-auto font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${Math.round(d.total/grandTotal*100)}%</span>
             </div>
-          ))}
+          `)}
         </div>
       </div>
     </div>
-  );
+  `;
 }
 
 function QRModal({ onClose }) {
@@ -230,7 +413,7 @@ function QRModal({ onClose }) {
       const totalSize = modules * cellSize;
       svg.setAttribute('width', totalSize.toString());
       svg.setAttribute('height', totalSize.toString());
-      svg.setAttribute('viewBox', `0 0 ${totalSize} ${totalSize}`);
+      svg.setAttribute('viewBox', '0 0 '+totalSize+' '+totalSize);
       for (let row = 0; row < modules; row++) {
         for (let col = 0; col < modules; col++) {
           if (qr.isDark(row, col)) {
@@ -248,17 +431,17 @@ function QRModal({ onClose }) {
     }
   }, [url]);
 
-  return (
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center fade-in" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/60" />
-      <div className="relative bg-white dark:bg-zinc-800 rounded-2xl p-8 text-center slide-up shadow-2xl m-4" onClick={e => e.stopPropagation()}>
-        <h3 className="text-base font-semibold text-zinc-800 dark:text-zinc-200 mb-4">Quét để mở trên điện thoại</h3>
-        <div ref={qrRef} className="mx-auto bg-white rounded-xl p-4 inline-flex items-center justify-center" />
-        <p className="text-xs text-zinc-400 mt-4 max-w-[250px] mx-auto break-all">{url}</p>
-        <button onClick={onClose} className="mt-5 px-6 py-2.5 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors font-medium">Đóng</button>
+  return html`
+    <div class="fixed inset-0 z-[9999] flex items-center justify-center fade-in" onClick=${onClose}>
+      <div class="absolute inset-0 bg-black/60" />
+      <div class="relative bg-white dark:bg-zinc-800 rounded-2xl p-8 text-center slide-up shadow-2xl m-4" onClick=${e => e.stopPropagation()}>
+        <h3 class="text-base font-semibold text-zinc-800 dark:text-zinc-200 mb-4">Quét để mở trên điện thoại</h3>
+        <div ref=${qrRef} class="mx-auto bg-white rounded-xl p-4 inline-flex items-center justify-center" />
+        <p class="text-xs text-zinc-400 mt-4 max-w-[250px] mx-auto break-all">${url}</p>
+        <button onClick=${onClose} class="mt-5 px-6 py-2.5 text-sm rounded-lg bg-zinc-100 dark:bg-zinc-700 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-600 transition-colors font-medium">Đóng</button>
       </div>
     </div>
-  );
+  `;
 }
 
 function ExpenseRow({ expense, onEdit, onDelete }) {
@@ -281,47 +464,45 @@ function ExpenseRow({ expense, onEdit, onDelete }) {
     setOffsetX(currentX.current < -40 ? -80 : 0);
   };
 
-  return (
-    <div className="relative overflow-hidden border-b border-zinc-100 dark:border-zinc-700/50 last:border-0">
-      {/* Delete button behind - mobile swipe */}
-      {isMobile && (
-        <div className="absolute right-0 top-0 bottom-0 w-20 bg-red-500 flex items-center justify-center">
-          <button onClick={() => onDelete(expense.id)} className="text-white text-xs font-medium flex flex-col items-center gap-1">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+  const catBg = cat.hex + '1a';
+
+  return html`
+    <div class="relative overflow-hidden border-b border-zinc-100 dark:border-zinc-700/50 last:border-0">
+      ${isMobile && html`
+        <div class="absolute right-0 top-0 bottom-0 w-20 bg-red-500 flex items-center justify-center">
+          <button onClick=${() => onDelete(expense.id)} class="text-white text-xs font-medium flex flex-col items-center gap-1">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
             Xóa
           </button>
         </div>
-      )}
-      {/* Main content */}
-      <div className="relative bg-white dark:bg-zinc-800 flex items-center gap-3 py-3 transition-transform"
-        style={isMobile ? { transform: `translateX(${offsetX}px)`, transitionDuration: swiping ? '0ms' : '200ms' } : {}}
-        onTouchStart={isMobile ? onTouchStart : undefined}
-        onTouchMove={isMobile ? onTouchMove : undefined}
-        onTouchEnd={isMobile ? onTouchEnd : undefined}
-        onClick={() => { if (offsetX === 0) onEdit(expense); else setOffsetX(0); }}>
-        <div className={`shrink-0 w-9 h-9 rounded-lg ${cat.color} bg-opacity-10 dark:bg-opacity-20 flex items-center justify-center text-lg`}>
-          {cat.emoji}
+      `}
+      <div class="relative bg-white dark:bg-zinc-800 flex items-center gap-3 py-3 transition-transform"
+        style="${isMobile ? 'transform:translateX('+offsetX+'px);transition-duration:'+(swiping?'0ms':'200ms') : ''}"
+        onTouchStart=${isMobile ? onTouchStart : undefined}
+        onTouchMove=${isMobile ? onTouchMove : undefined}
+        onTouchEnd=${isMobile ? onTouchEnd : undefined}
+        onClick=${() => { if (offsetX === 0) onEdit(expense); else setOffsetX(0); }}>
+        <div class="shrink-0 w-9 h-9 rounded-lg flex items-center justify-center text-lg" style="background-color:${catBg}">
+          ${cat.emoji}
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200 truncate">{expense.detail || cat.name}</p>
-          <p className="text-xs text-zinc-400">{cat.name} · {expense.date.slice(8)}/{expense.date.slice(5,7)}</p>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-zinc-800 dark:text-zinc-200 truncate">${expense.detail || cat.name}</p>
+          <p class="text-xs text-zinc-400">${cat.name} \u00B7 ${expense.date.slice(8)}/${expense.date.slice(5,7)}</p>
         </div>
-        <div className="text-right shrink-0">
-          <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">-{fmt(expense.amount)}đ</p>
+        <div class="text-right shrink-0">
+          <p class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">-${fmt(expense.amount)}đ</p>
         </div>
-        {/* Delete button - desktop only */}
-        {!isMobile && (
-          <button onClick={(e) => { e.stopPropagation(); onDelete(expense.id); }}
-            className="shrink-0 p-2 rounded-lg text-zinc-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors opacity-0 group-hover:opacity-100"
-            style={{ opacity: undefined }}
-            onMouseEnter={e => e.currentTarget.style.opacity = 1}
-            onMouseLeave={e => e.currentTarget.style.opacity = 0}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+        ${!isMobile && html`
+          <button onClick=${(e) => { e.stopPropagation(); onDelete(expense.id); }}
+            class="shrink-0 p-2 rounded-lg text-zinc-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors opacity-0"
+            onMouseEnter=${e => e.currentTarget.style.opacity = 1}
+            onMouseLeave=${e => e.currentTarget.style.opacity = 0}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
           </button>
-        )}
+        `}
       </div>
     </div>
-  );
+  `;
 }
 
 function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
@@ -331,7 +512,7 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
   const [amount, setAmount] = useState(expense?.amount?.toString() || '');
   const [scanning, setScanning] = useState(false);
   const [scanPreview, setScanPreview] = useState(null);
-  const [scanResults, setScanResults] = useState(null); // multi-item preview
+  const [scanResults, setScanResults] = useState(null);
   const fileRef = useRef(null);
   const amountRef = useRef(null);
 
@@ -344,10 +525,8 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
     try {
       const items = await scanImage(file);
       if (items.length > 1) {
-        // Multiple items - show preview to confirm
         setScanResults(items);
       } else if (items.length === 1) {
-        // Single item - fill form
         const item = items[0];
         if (item.amount) setAmount(item.amount.toString());
         if (item.category) setCategory(item.category);
@@ -373,138 +552,129 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
     onSave({ date, category, detail: detail.trim(), amount: n });
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center fade-in" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40" />
-      <div className="relative w-full max-w-md bg-white dark:bg-zinc-800 rounded-t-2xl sm:rounded-2xl p-5 max-h-[90vh] overflow-y-auto slide-up"
-        onClick={e => e.stopPropagation()}>
-        <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
-          {expense ? 'Sửa chi tiêu' : 'Thêm chi tiêu'}
+  return html`
+    <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center fade-in" onClick=${onClose}>
+      <div class="absolute inset-0 bg-black/40" />
+      <div class="relative w-full max-w-md bg-white dark:bg-zinc-800 rounded-t-2xl sm:rounded-2xl p-5 max-h-[90vh] overflow-y-auto slide-up"
+        onClick=${e => e.stopPropagation()}>
+        <h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
+          ${expense ? 'Sửa chi tiêu' : 'Thêm chi tiêu'}
         </h2>
 
-        {/* Scan receipt */}
-        {!expense && (
-          <div className="mb-4">
-            {/* Camera input */}
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleScan} className="hidden" id="camera-input" />
-            {/* Album input - no capture attribute so it opens photo library */}
-            <input type="file" accept="image/*" onChange={handleScan} className="hidden" id="album-input" />
-            {scanning ? (
-              <div className="w-full py-3 rounded-xl border-2 border-dashed border-emerald-300 dark:border-emerald-600 flex items-center justify-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
-                <svg className="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeDasharray="31.4 31.4" strokeLinecap="round"/></svg>
+        ${!expense && html`
+          <div class="mb-4">
+            <input ref=${fileRef} type="file" accept="image/*" capture="environment" onChange=${handleScan} class="hidden" id="camera-input" />
+            <input type="file" accept="image/*" onChange=${handleScan} class="hidden" id="album-input" />
+            ${scanning ? html`
+              <div class="w-full py-3 rounded-xl border-2 border-dashed border-emerald-300 dark:border-emerald-600 flex items-center justify-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+                <svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-dasharray="31.4 31.4" stroke-linecap="round"/></svg>
                 Đang đọc hóa đơn...
               </div>
-            ) : (
-              <div className="flex gap-2">
-                <button onClick={() => fileRef.current?.click()}
-                  className="flex-1 py-3 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 hover:border-emerald-400 dark:hover:border-emerald-500 transition-colors flex items-center justify-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+            ` : html`
+              <div class="flex gap-2">
+                <button onClick=${() => fileRef.current?.click()}
+                  class="flex-1 py-3 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 hover:border-emerald-400 dark:hover:border-emerald-500 transition-colors flex items-center justify-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
                   Chụp ảnh
                 </button>
-                <button onClick={() => document.getElementById('album-input')?.click()}
-                  className="flex-1 py-3 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 hover:border-emerald-400 dark:hover:border-emerald-500 transition-colors flex items-center justify-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                <button onClick=${() => document.getElementById('album-input')?.click()}
+                  class="flex-1 py-3 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 hover:border-emerald-400 dark:hover:border-emerald-500 transition-colors flex items-center justify-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
                   Chọn từ album
                 </button>
               </div>
-            )}
-            {scanPreview && !scanning && (
-              <div className="mt-2 relative inline-block">
-                <img src={scanPreview} className="h-20 rounded-lg object-cover" />
-                <button onClick={() => { setScanPreview(null); setScanResults(null); }} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-600 text-white rounded-full text-xs flex items-center justify-center">&times;</button>
+            `}
+            ${scanPreview && !scanning && html`
+              <div class="mt-2 relative" style="display:inline-block">
+                <img src=${scanPreview} class="h-20 rounded-lg object-cover" />
+                <button onClick=${() => { setScanPreview(null); setScanResults(null); }} class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-600 text-white rounded-full text-xs flex items-center justify-center">\u00D7</button>
               </div>
-            )}
-            {/* Multi-item scan results */}
-            {scanResults && scanResults.length > 1 && (
-              <div className="mt-3 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
-                <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 mb-2">
-                  Phát hiện {scanResults.length} khoản chi tiêu:
+            `}
+            ${scanResults && scanResults.length > 1 && html`
+              <div class="mt-3 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
+                <p class="text-xs font-semibold text-emerald-700 dark:text-emerald-300 mb-2">
+                  Phát hiện ${scanResults.length} khoản chi tiêu:
                 </p>
-                <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                  {scanResults.map((item, i) => {
-                    const cat = catMap[item.category] || catMap.other;
-                    return (
-                      <div key={i} className="flex items-center gap-2 text-xs bg-white dark:bg-zinc-800 rounded-lg px-2.5 py-2">
-                        <span>{cat.emoji}</span>
-                        <span className="flex-1 truncate text-zinc-700 dark:text-zinc-300">{item.detail || cat.name}</span>
-                        <span className="text-zinc-400">{item.date.slice(5)}</span>
-                        <span className="font-semibold text-zinc-800 dark:text-zinc-200">{fmt(item.amount)}đ</span>
+                <div class="space-y-1.5 max-h-48 overflow-y-auto">
+                  ${scanResults.map((item, i) => {
+                    const c = catMap[item.category] || catMap.other;
+                    return html`
+                      <div key=${i} class="flex items-center gap-2 text-xs bg-white dark:bg-zinc-800 rounded-lg px-2.5 py-2">
+                        <span>${c.emoji}</span>
+                        <span class="flex-1 truncate text-zinc-700 dark:text-zinc-300">${item.detail || c.name}</span>
+                        <span class="text-zinc-400">${item.date.slice(5)}</span>
+                        <span class="font-semibold text-zinc-800 dark:text-zinc-200">${fmt(item.amount)}đ</span>
                       </div>
-                    );
+                    `;
                   })}
                 </div>
-                <div className="flex gap-2 mt-3">
-                  <button onClick={() => setScanResults(null)} className="flex-1 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 text-xs font-medium">Hủy</button>
-                  <button onClick={handleSaveBulk} className="flex-1 py-2 rounded-lg bg-emerald-500 text-white text-xs font-medium hover:bg-emerald-600 transition-colors">
-                    Thêm tất cả ({scanResults.length})
+                <div class="flex gap-2 mt-3">
+                  <button onClick=${() => setScanResults(null)} class="flex-1 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 text-xs font-medium">Hủy</button>
+                  <button onClick=${handleSaveBulk} class="flex-1 py-2 rounded-lg bg-emerald-500 text-white text-xs font-medium hover:bg-emerald-600 transition-colors">
+                    Thêm tất cả (${scanResults.length})
                   </button>
                 </div>
               </div>
-            )}
+            `}
           </div>
-        )}
+        `}
 
-        {/* Date */}
-        <div className="mb-3">
-          <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Ngày</label>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)}
-            className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        <div class="mb-3">
+          <label class="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Ngày</label>
+          <input type="date" value=${date} onChange=${e => setDate(e.target.value)}
+            class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500" />
         </div>
 
-        {/* Category */}
-        <div className="mb-3">
-          <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Danh mục</label>
-          <div className="grid grid-cols-4 gap-2">
-            {CATEGORIES.map(c => (
-              <button key={c.id} onClick={() => setCategory(c.id)}
-                className={`p-2 rounded-lg border text-center transition-all text-xs ${
+        <div class="mb-3">
+          <label class="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Danh mục</label>
+          <div class="grid grid-cols-4 gap-2">
+            ${CATEGORIES.map(c => html`
+              <button key=${c.id} onClick=${() => setCategory(c.id)}
+                class="p-2 rounded-lg border text-center transition-all text-xs ${
                   category === c.id
                     ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 ring-1 ring-emerald-500'
                     : 'border-zinc-200 dark:border-zinc-600 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-700'
-                }`}>
-                <div className="text-lg mb-0.5">{c.emoji}</div>
-                {c.name}
+                }">
+                <div class="text-lg mb-0.5">${c.emoji}</div>
+                ${c.name}
               </button>
-            ))}
+            `)}
           </div>
         </div>
 
-        {/* Detail */}
-        <div className="mb-3">
-          <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Chi tiết <span className="text-zinc-300">(tùy chọn)</span></label>
-          <input value={detail} onChange={e => setDetail(e.target.value)} placeholder="VD: Cà phê sáng, Grab đi làm..."
-            className="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-sm placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        <div class="mb-3">
+          <label class="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Chi tiết <span class="text-zinc-300">(tùy chọn)</span></label>
+          <input value=${detail} onInput=${e => setDetail(e.target.value)} placeholder="VD: Cà phê sáng, Grab đi làm..."
+            class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-sm placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
         </div>
 
-        {/* Amount */}
-        <div className="mb-5">
-          <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Số tiền (đ)</label>
-          <input ref={amountRef} type="text" inputMode="numeric" value={amount} onChange={e => {
+        <div class="mb-5">
+          <label class="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Số tiền (đ)</label>
+          <input ref=${amountRef} type="text" inputMode="numeric" value=${amount} onInput=${e => {
               const raw = e.target.value.replace(/\D/g, '');
               setAmount(raw);
             }}
             placeholder="VD: 50000"
-            className="w-full px-3 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-lg font-semibold placeholder:text-zinc-400 placeholder:font-normal placeholder:text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
-            onKeyDown={e => e.key === 'Enter' && handleSave()}
-            autoFocus={!expense} />
-          {amount && <p className="text-xs text-zinc-400 mt-1">{fmt(parseInt(amount) || 0)}đ</p>}
+            class="w-full px-3 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-lg font-semibold placeholder:text-zinc-400 placeholder:font-normal placeholder:text-base focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            onKeyDown=${e => e.key === 'Enter' && handleSave()}
+            autofocus=${!expense} />
+          ${amount && html`<p class="text-xs text-zinc-400 mt-1">${fmt(parseInt(amount) || 0)}đ</p>`}
         </div>
 
-        {/* Actions */}
-        <div className="flex gap-3">
-          <button onClick={onClose}
-            className="flex-1 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 font-medium hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors text-sm">
+        <div class="flex gap-3">
+          <button onClick=${onClose}
+            class="flex-1 py-2.5 rounded-lg border border-zinc-200 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 font-medium hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors text-sm">
             Hủy
           </button>
-          <button onClick={handleSave}
-            className="flex-1 py-2.5 rounded-lg bg-emerald-500 text-white font-medium hover:bg-emerald-600 transition-colors text-sm disabled:opacity-40"
-            disabled={!amount || parseInt(amount) <= 0}>
-            {expense ? 'Lưu' : 'Thêm'}
+          <button onClick=${handleSave}
+            class="flex-1 py-2.5 rounded-lg bg-emerald-500 text-white font-medium hover:bg-emerald-600 transition-colors text-sm disabled:opacity-40"
+            disabled=${!amount || parseInt(amount) <= 0}>
+            ${expense ? 'Lưu' : 'Thêm'}
           </button>
         </div>
       </div>
     </div>
-  );
+  `;
 }
 
 function ExportButton({ expenses }) {
@@ -513,22 +683,22 @@ function ExportButton({ expenses }) {
     const header = 'Ngày,Danh mục,Chi tiết,Số tiền\n';
     const rows = expenses.map(e => {
       const cat = catMap[e.category]?.name || e.category;
-      return `${e.date},"${cat}","${e.detail || ''}",${e.amount}`;
+      return e.date+',"'+cat+'","'+(e.detail||'')+'",'+e.amount;
     }).join('\n');
     const bom = '\uFEFF';
     const blob = new Blob([bom + header + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `chi-tieu-${today()}.csv`;
+    a.download = 'chi-tieu-'+today()+'.csv';
     a.click();
     URL.revokeObjectURL(url);
   };
-  return (
-    <button onClick={handleExport} className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="Xuất CSV">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+  return html`
+    <button onClick=${handleExport} class="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="Xuất CSV">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     </button>
-  );
+  `;
 }
 
 // ── App ──
@@ -543,12 +713,11 @@ function App() {
   const [showQR, setShowQR] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Load data from API
   const fetchData = useCallback(async () => {
     try {
       const [expData, budData] = await Promise.all([
-        api('/api/expenses'),
-        api('/api/budgets')
+        apiCall('/api/expenses'),
+        apiCall('/api/budgets')
       ]);
       setExpenses(expData);
       setBudgets(budData);
@@ -560,7 +729,6 @@ function App() {
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-  // Real-time updates via SSE
   useEffect(() => {
     let es;
     const connect = () => {
@@ -593,34 +761,33 @@ function App() {
     const newExp = { id: uid(), ...data };
     setExpenses(prev => [...prev, newExp]);
     setModal(null);
-    await api('/api/expenses', { method: 'POST', body: JSON.stringify(newExp) });
+    await apiCall('/api/expenses', { method: 'POST', body: JSON.stringify(newExp) });
   };
 
   const updateExpense = async (data) => {
     const id = modal.id;
     setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...data } : e));
     setModal(null);
-    await api(`/api/expenses/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+    await apiCall('/api/expenses/'+id, { method: 'PUT', body: JSON.stringify(data) });
   };
 
   const addBulkExpenses = async (items) => {
     const newItems = items.map(item => ({ id: uid(), ...item }));
     setExpenses(prev => [...prev, ...newItems]);
     setModal(null);
-    await api('/api/expenses/bulk', { method: 'POST', body: JSON.stringify({ items: newItems }) });
+    await apiCall('/api/expenses/bulk', { method: 'POST', body: JSON.stringify({ items: newItems }) });
   };
 
   const deleteExpense = async (id) => {
     setExpenses(prev => prev.filter(e => e.id !== id));
-    await api(`/api/expenses/${id}`, { method: 'DELETE' });
+    await apiCall('/api/expenses/'+id, { method: 'DELETE' });
   };
 
   const setBudget = async (v) => {
     setBudgets(prev => ({ ...prev, [currentMonth]: v }));
-    await api('/api/budgets', { method: 'POST', body: JSON.stringify({ month: currentMonth, amount: v }) });
+    await apiCall('/api/budgets', { method: 'POST', body: JSON.stringify({ month: currentMonth, amount: v }) });
   };
 
-  // Group filtered by date
   const grouped = useMemo(() => {
     const map = {};
     filtered.forEach(e => {
@@ -639,103 +806,93 @@ function App() {
     return dt.toLocaleDateString('vi-VN', { weekday: 'short', day: 'numeric', month: 'numeric' });
   };
 
-  return (
-    <div className={`min-h-screen transition-colors ${dark ? 'bg-zinc-900' : 'bg-zinc-50'}`}>
-      {/* Header */}
-      <header className="sticky top-0 z-40 backdrop-blur-md bg-white/80 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+  return html`
+    <div class="min-h-screen transition-colors ${dark ? 'bg-zinc-900' : 'bg-zinc-50'}">
+      <header class="sticky top-0 z-40 backdrop-blur-md bg-white/80 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800">
+        <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div>
-            <h1 className="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Thu Chi</h1>
+            <h1 class="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Thu Chi</h1>
           </div>
-          <div className="flex items-center gap-1">
-            <button onClick={() => setShowQR(true)} className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="QR Code">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4"/><line x1="22" y1="18" x2="22" y2="22"/><line x1="18" y1="22" x2="22" y2="22"/></svg>
+          <div class="flex items-center gap-1">
+            <button onClick=${() => setShowQR(true)} class="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="QR Code">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4"/><line x1="22" y1="18" x2="22" y2="22"/><line x1="18" y1="22" x2="22" y2="22"/></svg>
             </button>
-            <ExportButton expenses={rangeExpenses} />
-            <button onClick={() => setDark(!dark)}
-              className="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
-              {dark ? (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
-              ) : (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              )}
+            <${ExportButton} expenses=${rangeExpenses} />
+            <button onClick=${() => setDark(!dark)}
+              class="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors">
+              ${dark ? html`
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+              ` : html`
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              `}
             </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-lg mx-auto pb-24">
-        {/* Date range picker + Budget */}
-        <DateRangePicker from={dateFrom} to={dateTo} onChangeFrom={setDateFrom} onChangeTo={setDateTo} />
-        <BudgetBar total={rangeTotal} budget={monthBudget}
-          onSetBudget={setBudget} />
+      <main class="max-w-lg mx-auto pb-24">
+        <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} />
+        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} />
+        <${CategoryChart} expenses=${rangeExpenses} />
 
-        {/* Category chart */}
-        <CategoryChart expenses={rangeExpenses} />
-
-        {/* Filter */}
-        <div className="px-4 mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-          <button onClick={() => setFilterCat('all')}
-            className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+        <div class="px-4 mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <button onClick=${() => setFilterCat('all')}
+            class="shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
               filterCat === 'all' ? 'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
-            }`}>Tất cả</button>
-          {CATEGORIES.map(c => (
-            <button key={c.id} onClick={() => setFilterCat(c.id)}
-              className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+            }">Tất cả</button>
+          ${CATEGORIES.map(c => html`
+            <button key=${c.id} onClick=${() => setFilterCat(c.id)}
+              class="shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                 filterCat === c.id ? 'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
-              }`}>{c.emoji} {c.name}</button>
-          ))}
+              }">${c.emoji} ${c.name}</button>
+          `)}
         </div>
 
-        {/* Expense list */}
-        <div className="px-4 mt-3">
-          {grouped.length === 0 && (
-            <div className="text-center py-16">
-              <div className="text-5xl mb-3">💰</div>
-              <p className="text-zinc-500 dark:text-zinc-400 text-sm">Chưa có chi tiêu nào</p>
-              <p className="text-zinc-400 dark:text-zinc-500 text-xs mt-1">Nhấn nút bên dưới để thêm</p>
+        <div class="px-4 mt-3">
+          ${grouped.length === 0 && html`
+            <div class="text-center py-16">
+              <div class="text-5xl mb-3">\u{1F4B0}</div>
+              <p class="text-zinc-500 dark:text-zinc-400 text-sm">Chưa có chi tiêu nào</p>
+              <p class="text-zinc-400 dark:text-zinc-500 text-xs mt-1">Nhấn nút bên dưới để thêm</p>
             </div>
-          )}
-          {grouped.map(([date, items]) => (
-            <div key={date} className="mb-4">
-              <div className="flex items-center justify-between mb-1 sticky top-[57px] bg-zinc-50 dark:bg-zinc-900 py-1 z-10">
-                <span className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase">{formatDateLabel(date)}</span>
-                <span className="text-xs text-zinc-400">{fmt(items.reduce((s,e) => s+e.amount, 0))}đ</span>
+          `}
+          ${grouped.map(([date, items]) => html`
+            <div key=${date} class="mb-4">
+              <div class="flex items-center justify-between mb-1 sticky top-[57px] bg-zinc-50 dark:bg-zinc-900 py-1 z-10">
+                <span class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase">${formatDateLabel(date)}</span>
+                <span class="text-xs text-zinc-400">${fmt(items.reduce((s,e) => s+e.amount, 0))}đ</span>
               </div>
-              <div className="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 px-3">
-                {items.map(e => <ExpenseRow key={e.id} expense={e} onEdit={() => setModal(e)} onDelete={deleteExpense} />)}
+              <div class="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 px-3">
+                ${items.map(e => html`<${ExpenseRow} key=${e.id} expense=${e} onEdit=${() => setModal(e)} onDelete=${deleteExpense} />`)}
               </div>
             </div>
-          ))}
+          `)}
         </div>
       </main>
 
-      {/* FAB */}
-      <div className="fixed bottom-6 left-0 right-0 flex justify-center z-30">
-        <button onClick={() => setModal('new')}
-          className="px-5 py-3 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-medium shadow-lg shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all active:scale-95 flex items-center gap-2">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <div class="fixed bottom-6 left-0 right-0 flex justify-center z-30">
+        <button onClick=${() => setModal('new')}
+          class="px-5 py-3 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-medium shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all active:scale-95 flex items-center gap-2">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Thêm chi tiêu
         </button>
       </div>
 
-      {/* QR Modal */}
-      {showQR && <QRModal onClose={() => setShowQR(false)} />}
+      ${showQR && html`<${QRModal} onClose=${() => setShowQR(false)} />`}
 
-      {/* Modal */}
-      {modal && (
-        <ExpenseForm
-          expense={modal === 'new' ? null : modal}
-          onSave={modal === 'new' ? addExpense : updateExpense}
-          onSaveBulk={addBulkExpenses}
-          onClose={() => setModal(null)}
+      ${modal && html`
+        <${ExpenseForm}
+          expense=${modal === 'new' ? null : modal}
+          onSave=${modal === 'new' ? addExpense : updateExpense}
+          onSaveBulk=${addBulkExpenses}
+          onClose=${() => setModal(null)}
         />
-      )}
+      `}
     </div>
-  );
+  `;
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+render(html`<${App} />`, document.getElementById('root'));
 </script>
 </body>
 </html>
