@@ -62,6 +62,8 @@ select{appearance:auto}
 .px-2{padding-left:.5rem;padding-right:.5rem}.px-2\.5{padding-left:.625rem;padding-right:.625rem}
 .px-3{padding-left:.75rem;padding-right:.75rem}.px-4{padding-left:1rem;padding-right:1rem}
 .px-5{padding-left:1.25rem;padding-right:1.25rem}.px-6{padding-left:1.5rem;padding-right:1.5rem}
+.pl-9{padding-left:2.25rem}.pr-8{padding-right:2rem}
+.border-amber-400{border-color:#fbbf24}
 .py-0\.5{padding-top:.125rem;padding-bottom:.125rem}.py-1{padding-top:.25rem;padding-bottom:.25rem}
 .py-1\.5{padding-top:.375rem;padding-bottom:.375rem}.py-2{padding-top:.5rem;padding-bottom:.5rem}
 .py-2\.5{padding-top:.625rem;padding-bottom:.625rem}.py-3{padding-top:.75rem;padding-bottom:.75rem}
@@ -252,6 +254,79 @@ const catMap = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 // Vietnamese names for display
 const CAT_NAMES = {food:'Ăn uống',transport:'Di chuyển',shopping:'Mua sắm',entertainment:'Giải trí',bills:'Hóa đơn',health:'Sức khỏe',education:'Học tập',other:'Khác'};
 CATEGORIES.forEach(c => c.name = CAT_NAMES[c.id]);
+
+// ── Smart Category Learning ──
+// Learns keyword→category mapping from past expenses
+const catMemory = {
+  _data: load('tc-cat-mem', {}), // { keyword: { cat: 'food', n: 3 } }
+
+  learn(detail, category) {
+    if (!detail || !category || category === 'other') return;
+    const keys = this._extractKeys(detail);
+    keys.forEach(k => {
+      const cur = this._data[k];
+      if (!cur || cur.cat === category) {
+        this._data[k] = { cat: category, n: (cur?.n || 0) + 1 };
+      } else if (cur.cat !== category) {
+        // User corrected: override with new category
+        this._data[k] = { cat: category, n: 1 };
+      }
+    });
+    save('tc-cat-mem', this._data);
+  },
+
+  suggest(detail) {
+    if (!detail) return null;
+    const keys = this._extractKeys(detail);
+    let best = null;
+    keys.forEach(k => {
+      const m = this._data[k];
+      if (m && (!best || m.n > best.n || k.length > (best.kLen || 0))) {
+        best = { cat: m.cat, n: m.n, kLen: k.length, keyword: k };
+      }
+    });
+    return best;
+  },
+
+  // Also check all stored keywords against a detail string
+  suggestFromAll(detail) {
+    if (!detail) return null;
+    const lower = detail.toLowerCase().replace(/[^a-zàáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ0-9\s]/g, '');
+    let best = null;
+    for (const [k, v] of Object.entries(this._data)) {
+      if (lower.includes(k) && (!best || k.length > best.kLen || (k.length === best.kLen && v.n > best.n))) {
+        best = { cat: v.cat, n: v.n, kLen: k.length, keyword: k };
+      }
+    }
+    return best;
+  },
+
+  _extractKeys(detail) {
+    const lower = detail.toLowerCase().replace(/[^a-zàáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ0-9\s]/g, '');
+    const words = lower.split(/\s+/).filter(w => w.length >= 2);
+    const keys = [...words];
+    // Also add 2-word combos for better matching
+    for (let i = 0; i < words.length - 1; i++) {
+      keys.push(words[i] + ' ' + words[i+1]);
+    }
+    // Add full string if short enough
+    if (lower.length <= 30 && lower.length >= 2) keys.push(lower);
+    return [...new Set(keys)];
+  },
+
+  // Batch learn from existing expenses
+  learnBulk(expenses) {
+    expenses.forEach(e => {
+      if (e.detail) this.learn(e.detail, e.category);
+    });
+  }
+};
+
+// ── Duplicate Detection ──
+function findDuplicates(expenses, date, amount) {
+  if (!date || !amount || amount <= 0) return [];
+  return expenses.filter(e => e.date === date && e.amount === amount);
+}
 
 // ── Components ──
 
@@ -755,7 +830,7 @@ function ExpenseRow({ expense, onEdit, onDelete }) {
   `;
 }
 
-function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
+function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses }) {
   const [date, setDate] = useState(expense?.date || today());
   const [category, setCategory] = useState(expense?.category || 'food');
   const [detail, setDetail] = useState(expense?.detail || '');
@@ -763,8 +838,35 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
   const [scanning, setScanning] = useState(false);
   const [scanPreview, setScanPreview] = useState(null);
   const [scanResults, setScanResults] = useState(null);
+  const [catSuggestion, setCatSuggestion] = useState(null);
+  const [autoApplied, setAutoApplied] = useState(false);
   const fileRef = useRef(null);
   const amountRef = useRef(null);
+
+  // Duplicate detection
+  const duplicates = useMemo(() => {
+    const amt = parseInt((amount || '0').replace(/\D/g, ''));
+    return findDuplicates(allExpenses || [], date, amt).filter(e => !expense || e.id !== expense.id);
+  }, [date, amount, allExpenses, expense]);
+
+  // Smart category suggestion when detail changes
+  const handleDetailChange = (val) => {
+    setDetail(val);
+    if (!expense && val.length >= 2) {
+      const suggestion = catMemory.suggestFromAll(val);
+      if (suggestion) {
+        setCatSuggestion(suggestion);
+        if (!autoApplied) {
+          setCategory(suggestion.cat);
+          setAutoApplied(true);
+        }
+      } else {
+        setCatSuggestion(null);
+      }
+    } else {
+      setCatSuggestion(null);
+    }
+  };
 
   const handleScan = async (e) => {
     const file = e.target.files?.[0];
@@ -774,10 +876,16 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
     setScanResults(null);
     try {
       const items = await scanImage(file);
-      if (items.length > 1) {
-        setScanResults(items.map(it => ({ ...it, _id: uid() })));
-      } else if (items.length === 1) {
-        const item = items[0];
+      // Apply smart category from memory to scanned items
+      const enhanced = items.map(it => {
+        const mem = catMemory.suggestFromAll(it.detail);
+        if (mem && it.category === 'other') it.category = mem.cat;
+        return it;
+      });
+      if (enhanced.length > 1) {
+        setScanResults(enhanced.map(it => ({ ...it, _id: uid() })));
+      } else if (enhanced.length === 1) {
+        const item = enhanced[0];
         if (item.amount) setAmount(item.amount.toString());
         if (item.category) setCategory(item.category);
         if (item.detail) setDetail(item.detail);
@@ -861,8 +969,10 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
                 </p>
                 <div class="space-y-2 max-h-64 overflow-y-auto">
                   ${scanResults.map((item) => {
+                    const isDup = findDuplicates(allExpenses || [], item.date, item.amount).length > 0;
                     return html`
-                      <div key=${item._id} class="bg-white dark:bg-zinc-800 rounded-lg p-2.5 border border-zinc-200 dark:border-zinc-700">
+                      <div key=${item._id} class="bg-white dark:bg-zinc-800 rounded-lg p-2.5 border ${isDup ? 'border-amber-400' : 'border-zinc-200 dark:border-zinc-700'}">
+                        ${isDup && html`<p class="text-xs text-amber-500 mb-1">\u26A0\uFE0F Có thể trùng</p>`}
                         <div class="flex items-center gap-1.5 mb-1.5">
                           <select value=${item.category} onChange=${e => updateScanItem(item._id, 'category', e.target.value)}
                             class="px-1.5 py-1 rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" style="max-width:5.5rem">
@@ -921,8 +1031,14 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
 
         <div class="mb-3">
           <label class="block text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1">Chi tiết <span class="text-zinc-300">(tùy chọn)</span></label>
-          <input value=${detail} onInput=${e => setDetail(e.target.value)} placeholder="VD: Cà phê sáng, Grab đi làm..."
+          <input value=${detail} onInput=${e => handleDetailChange(e.target.value)} placeholder="VD: Cà phê sáng, Grab đi làm..."
             class="w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-sm placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+          ${catSuggestion && html`
+            <p class="text-xs mt-1 text-emerald-600 dark:text-emerald-400">
+              \u{1F4A1} Gợi ý: <strong>${(catMap[catSuggestion.cat] || catMap.other).emoji} ${(catMap[catSuggestion.cat] || catMap.other).name}</strong>
+              <span class="text-zinc-400"> (từ "${catSuggestion.keyword}")</span>
+            </p>
+          `}
         </div>
 
         <div class="mb-5">
@@ -936,6 +1052,9 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
             onKeyDown=${e => e.key === 'Enter' && handleSave()}
             autofocus=${!expense} />
           ${amount && html`<p class="text-xs text-zinc-400 mt-1">${fmt(parseInt(amount) || 0)}đ</p>`}
+          ${duplicates.length > 0 && html`
+            <p class="text-xs text-amber-500 mt-1">\u26A0\uFE0F Có ${duplicates.length} khoản trùng (cùng ngày, cùng số tiền): ${duplicates.map(d => d.detail || (catMap[d.category]||catMap.other).name).join(', ')}</p>
+          `}
         </div>
 
         <div class="flex gap-3">
@@ -989,6 +1108,7 @@ function App() {
   const [filterCat, setFilterCat] = useState('all');
   const [showQR, setShowQR] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const fetchData = useCallback(async () => {
     try {
@@ -998,6 +1118,8 @@ function App() {
       ]);
       setExpenses(expData);
       setBudgets(budData);
+      // Learn category patterns from existing expenses
+      catMemory.learnBulk(expData);
     } catch (e) {
       console.error('Failed to fetch:', e);
     } finally {
@@ -1025,16 +1147,25 @@ function App() {
     [expenses, dateFrom, dateTo]
   );
 
-  const filtered = useMemo(() =>
-    filterCat === 'all' ? rangeExpenses : rangeExpenses.filter(e => e.category === filterCat),
-    [rangeExpenses, filterCat]
-  );
+  const filtered = useMemo(() => {
+    let result = filterCat === 'all' ? rangeExpenses : rangeExpenses.filter(e => e.category === filterCat);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      result = result.filter(e =>
+        (e.detail || '').toLowerCase().includes(q) ||
+        (catMap[e.category]?.name || '').toLowerCase().includes(q) ||
+        String(e.amount).includes(q)
+      );
+    }
+    return result;
+  }, [rangeExpenses, filterCat, searchQuery]);
 
   const rangeTotal = useMemo(() => rangeExpenses.reduce((s, e) => s + e.amount, 0), [rangeExpenses]);
   const currentMonth = today().slice(0, 7);
   const monthBudget = budgets[currentMonth] || 0;
 
   const addExpense = async (data) => {
+    catMemory.learn(data.detail, data.category);
     const newExp = { id: uid(), ...data };
     setExpenses(prev => [...prev, newExp]);
     setModal(null);
@@ -1042,6 +1173,7 @@ function App() {
   };
 
   const updateExpense = async (data) => {
+    catMemory.learn(data.detail, data.category);
     const id = modal.id;
     setExpenses(prev => prev.map(e => e.id === id ? { ...e, ...data } : e));
     setModal(null);
@@ -1049,6 +1181,7 @@ function App() {
   };
 
   const addBulkExpenses = async (items) => {
+    items.forEach(it => catMemory.learn(it.detail, it.category));
     const newItems = items.map(item => ({ id: uid(), ...item }));
     setExpenses(prev => [...prev, ...newItems]);
     setModal(null);
@@ -1112,7 +1245,19 @@ function App() {
         <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} />
         <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} />
 
-        <div class="px-4 mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <div class="px-4 mt-4">
+          <div class="relative flex items-center">
+            <svg class="absolute" style="left:0.75rem" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input type="text" value=${searchQuery} onInput=${e => setSearchQuery(e.target.value)}
+              placeholder="Tìm kiếm chi tiêu..."
+              class="w-full pl-9 pr-8 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-sm placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+            ${searchQuery && html`
+              <button onClick=${() => setSearchQuery('')} class="absolute right-2 top-1/2 text-zinc-400 hover:text-zinc-600 text-sm" style="transform:translateY(-50%)">\u00D7</button>
+            `}
+          </div>
+        </div>
+
+        <div class="px-4 mt-3 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button onClick=${() => setFilterCat('all')}
             class="shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
               filterCat === 'all' ? 'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
@@ -1163,6 +1308,7 @@ function App() {
           onSave=${modal === 'new' ? addExpense : updateExpense}
           onSaveBulk=${addBulkExpenses}
           onClose=${() => setModal(null)}
+          allExpenses=${expenses}
         />
       `}
     </div>
