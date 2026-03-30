@@ -59,6 +59,16 @@ Nếu ảnh là sao kê ngân hàng, lịch sử giao dịch, hoặc có nhiều
 
 Chỉ lấy các khoản CHI (tiền ra), bỏ qua các khoản thu (tiền vào).
 
+QUY TẮC PHÂN LOẠI (BẮT BUỘC tuân theo):
+- MOCA, GrabFood, GrabMart, ShopeeFood, Baemin → food (ăn uống)
+- Tên nhà hàng/quán ăn/cafe: Starbucks, Highland, Phúc Long, KFC, McDonald's, Jollibee, Pizza Hut, Lotteria, The Coffee House, Cộng Cà Phê, trà sữa, cơm, phở, bún, bánh mì... → food (ăn uống)
+- Shopee, Lazada, Tiki, Sendo, TikTok Shop → shopping (mua sắm)
+- Grab (đi xe), GrabBike, GrabCar, Be, Xanh SM, taxi, xe ôm → transport (di chuyển)
+- Netflix, Spotify, YouTube Premium, game, rạp phim, CGV, Lotte Cinema → entertainment (giải trí)
+- Tiền điện, nước, internet, điện thoại, thuê nhà → bills (hóa đơn)
+- Bệnh viện, thuốc, khám, nha khoa → health (sức khỏe)
+- Học phí, sách, khóa học, Udemy, Coursera → education (học tập)
+
 Với mỗi khoản, xác định:
 - "date": ngày giao dịch (format YYYY-MM-DD). Nếu không rõ năm thì dùng năm {year}. Nếu không rõ ngày thì dùng "{today}".
 - "category": PHẢI là 1 trong: food, transport, shopping, entertainment, bills, health, education, other

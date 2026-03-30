@@ -322,6 +322,79 @@ const catMemory = {
   }
 };
 
+// Pre-seed built-in rules (won't override user corrections since n=1)
+const BUILTIN_RULES = {
+  // Food
+  'moca':        { cat: 'food', n: 50 },
+  'grabfood':    { cat: 'food', n: 50 },
+  'grabmart':    { cat: 'food', n: 50 },
+  'shopeefood':  { cat: 'food', n: 50 },
+  'baemin':      { cat: 'food', n: 50 },
+  'starbucks':   { cat: 'food', n: 50 },
+  'highland':    { cat: 'food', n: 50 },
+  'highlands':   { cat: 'food', n: 50 },
+  'phúc long':   { cat: 'food', n: 50 },
+  'phuc long':   { cat: 'food', n: 50 },
+  'kfc':         { cat: 'food', n: 50 },
+  'mcdonalds':   { cat: 'food', n: 50 },
+  'jollibee':    { cat: 'food', n: 50 },
+  'pizza hut':   { cat: 'food', n: 50 },
+  'lotteria':    { cat: 'food', n: 50 },
+  'the coffee house': { cat: 'food', n: 50 },
+  'cộng cà phê': { cat: 'food', n: 50 },
+  'cà phê':      { cat: 'food', n: 30 },
+  'trà sữa':     { cat: 'food', n: 30 },
+  'cơm':         { cat: 'food', n: 20 },
+  'phở':         { cat: 'food', n: 20 },
+  'bún':         { cat: 'food', n: 20 },
+  'bánh mì':     { cat: 'food', n: 20 },
+  // Transport
+  'grab':        { cat: 'transport', n: 50 },
+  'grabbike':    { cat: 'transport', n: 50 },
+  'grabcar':     { cat: 'transport', n: 50 },
+  'be':          { cat: 'transport', n: 50 },
+  'xanh sm':     { cat: 'transport', n: 50 },
+  'taxi':        { cat: 'transport', n: 40 },
+  'xe ôm':       { cat: 'transport', n: 40 },
+  'xăng':        { cat: 'transport', n: 40 },
+  'gửi xe':      { cat: 'transport', n: 30 },
+  // Shopping
+  'shopee':      { cat: 'shopping', n: 50 },
+  'lazada':      { cat: 'shopping', n: 50 },
+  'tiki':        { cat: 'shopping', n: 50 },
+  'sendo':       { cat: 'shopping', n: 50 },
+  'tiktok shop': { cat: 'shopping', n: 50 },
+  // Entertainment
+  'netflix':     { cat: 'entertainment', n: 50 },
+  'spotify':     { cat: 'entertainment', n: 50 },
+  'youtube premium': { cat: 'entertainment', n: 50 },
+  'cgv':         { cat: 'entertainment', n: 50 },
+  'lotte cinema':{ cat: 'entertainment', n: 50 },
+  'game':        { cat: 'entertainment', n: 30 },
+  // Bills
+  'tiền điện':   { cat: 'bills', n: 50 },
+  'tiền nước':   { cat: 'bills', n: 50 },
+  'internet':    { cat: 'bills', n: 50 },
+  'điện thoại':  { cat: 'bills', n: 40 },
+  'thuê nhà':    { cat: 'bills', n: 50 },
+  // Health
+  'bệnh viện':  { cat: 'health', n: 50 },
+  'thuốc':       { cat: 'health', n: 40 },
+  'nha khoa':    { cat: 'health', n: 50 },
+  'khám':        { cat: 'health', n: 30 },
+  // Education
+  'học phí':     { cat: 'education', n: 50 },
+  'khóa học':    { cat: 'education', n: 50 },
+  'udemy':       { cat: 'education', n: 50 },
+  'coursera':    { cat: 'education', n: 50 },
+  'sách':        { cat: 'education', n: 30 },
+};
+// Merge built-in rules (don't override user-corrected entries)
+for (const [k, v] of Object.entries(BUILTIN_RULES)) {
+  if (!catMemory._data[k]) catMemory._data[k] = v;
+}
+save('tc-cat-mem', catMemory._data);
+
 // ── Duplicate Detection ──
 function findDuplicates(expenses, date, amount) {
   if (!date || !amount || amount <= 0) return [];
