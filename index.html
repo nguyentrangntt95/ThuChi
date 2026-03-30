@@ -322,6 +322,7 @@ function ExpenseRow({ expense, onEdit, onDelete }) {
   const cat = catMap[expense.category] || catMap.other;
   const [offsetX, setOffsetX] = useState(0);
   const [swiping, setSwiping] = useState(false);
+  const [isMobile] = useState(() => 'ontouchstart' in window || navigator.maxTouchPoints > 0);
   const startX = useRef(0);
   const currentX = useRef(0);
 
@@ -339,17 +340,21 @@ function ExpenseRow({ expense, onEdit, onDelete }) {
 
   return (
     <div className="relative overflow-hidden border-b border-zinc-100 dark:border-zinc-700/50 last:border-0">
-      {/* Delete button behind */}
-      <div className="absolute right-0 top-0 bottom-0 w-20 bg-red-500 flex items-center justify-center">
-        <button onClick={() => onDelete(expense.id)} className="text-white text-xs font-medium flex flex-col items-center gap-1">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-          Xóa
-        </button>
-      </div>
-      {/* Main content - slides */}
+      {/* Delete button behind - mobile swipe */}
+      {isMobile && (
+        <div className="absolute right-0 top-0 bottom-0 w-20 bg-red-500 flex items-center justify-center">
+          <button onClick={() => onDelete(expense.id)} className="text-white text-xs font-medium flex flex-col items-center gap-1">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+            Xóa
+          </button>
+        </div>
+      )}
+      {/* Main content */}
       <div className="relative bg-white dark:bg-zinc-800 flex items-center gap-3 py-3 transition-transform"
-        style={{ transform: `translateX(${offsetX}px)`, transitionDuration: swiping ? '0ms' : '200ms' }}
-        onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}
+        style={isMobile ? { transform: `translateX(${offsetX}px)`, transitionDuration: swiping ? '0ms' : '200ms' } : {}}
+        onTouchStart={isMobile ? onTouchStart : undefined}
+        onTouchMove={isMobile ? onTouchMove : undefined}
+        onTouchEnd={isMobile ? onTouchEnd : undefined}
         onClick={() => { if (offsetX === 0) onEdit(expense); else setOffsetX(0); }}>
         <div className={`shrink-0 w-9 h-9 rounded-lg ${cat.color} bg-opacity-10 dark:bg-opacity-20 flex items-center justify-center text-lg`}>
           {cat.emoji}
@@ -358,9 +363,19 @@ function ExpenseRow({ expense, onEdit, onDelete }) {
           <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200 truncate">{expense.detail || cat.name}</p>
           <p className="text-xs text-zinc-400">{cat.name} · {expense.date.slice(8)}/{expense.date.slice(5,7)}</p>
         </div>
-        <div className="text-right shrink-0 pr-1">
+        <div className="text-right shrink-0">
           <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">-{fmt(expense.amount)}đ</p>
         </div>
+        {/* Delete button - desktop only */}
+        {!isMobile && (
+          <button onClick={(e) => { e.stopPropagation(); onDelete(expense.id); }}
+            className="shrink-0 p-2 rounded-lg text-zinc-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors opacity-0 group-hover:opacity-100"
+            style={{ opacity: undefined }}
+            onMouseEnter={e => e.currentTarget.style.opacity = 1}
+            onMouseLeave={e => e.currentTarget.style.opacity = 0}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          </button>
+        )}
       </div>
     </div>
   );
