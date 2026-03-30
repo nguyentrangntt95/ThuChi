@@ -70,9 +70,9 @@ CHỈ trả về JSON array, KHÔNG có text nào khác:
 
 Nếu không đọc được gì hữu ích, trả về: []"""
 
-def scan_with_gemini(image_bytes, content_type):
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+def scan_with_groq(image_bytes, content_type):
+    api_key = os.environ.get("GROQ_API_KEY", "")
+    url = "https://api.groq.com/openai/v1/chat/completions"
 
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
     today_str = date.today().isoformat()
@@ -80,20 +80,23 @@ def scan_with_gemini(image_bytes, content_type):
     prompt = SCAN_PROMPT.format(today=today_str, year=year)
 
     payload = {
-        "contents": [{
-            "parts": [
-                {"inline_data": {"mime_type": content_type, "data": b64}},
-                {"text": prompt}
+        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "messages": [{
+            "role": "user",
+            "content": [
+                {"type": "image_url", "image_url": {"url": f"data:{content_type};base64,{b64}"}},
+                {"type": "text", "text": prompt}
             ]
         }],
-        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 2000}
+        "temperature": 0.1,
+        "max_tokens": 2000
     }
 
-    resp = http_requests.post(url, json=payload, timeout=30)
+    resp = http_requests.post(url, json=payload, headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
     resp.raise_for_status()
     data = resp.json()
 
-    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    text = data["choices"][0]["message"]["content"].strip()
     # Extract JSON
     if text.startswith("```"):
         text = re.sub(r'^```\w*\n?', '', text)
@@ -128,7 +131,7 @@ def scan_receipt():
     image_bytes = file.read()
     content_type = file.content_type or 'image/jpeg'
     try:
-        items = scan_with_gemini(image_bytes, content_type)
+        items = scan_with_groq(image_bytes, content_type)
         return jsonify({"items": items})
     except Exception as e:
         return jsonify({"error": str(e), "items": []}), 500
