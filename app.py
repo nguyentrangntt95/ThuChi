@@ -63,12 +63,26 @@ Với mỗi khoản, xác định:
 - "date": ngày giao dịch (format YYYY-MM-DD). Nếu không rõ năm thì dùng năm {year}. Nếu không rõ ngày thì dùng "{today}".
 - "category": PHẢI là 1 trong: food, transport, shopping, entertainment, bills, health, education, other
 - "detail": mô tả ngắn gọn bằng tiếng Việt (VD: "Grab đi làm", "Cà phê Highland", "Tiền điện tháng 3")
-- "amount": số tiền (số nguyên, đơn vị VND, KHÔNG có dấu chấm/phẩy)
+- "amount": số tiền GỐC trên hóa đơn (số nguyên, KHÔNG có dấu chấm/phẩy)
+- "currency": đơn vị tiền tệ gốc. Nếu là VND/đồng thì ghi "VND". Nếu là USD/$ thì ghi "USD". Nếu là EUR/€ thì ghi "EUR". Mặc định "VND".
 
 CHỈ trả về JSON array, KHÔNG có text nào khác:
-[{{"date":"2026-03-29","category":"food","detail":"Cà phê Highland","amount":45000}}]
+[{{"date":"2026-03-29","category":"food","detail":"Cà phê Highland","amount":45000,"currency":"VND"}}]
 
 Nếu không đọc được gì hữu ích, trả về: []"""
+
+# Exchange rates to VND (approximate, updated periodically)
+EXCHANGE_RATES = {
+    'USD': 25500,
+    'EUR': 27500,
+    'GBP': 32000,
+    'JPY': 170,
+    'KRW': 19,
+    'THB': 720,
+    'SGD': 19000,
+    'AUD': 16500,
+    'CNY': 3500,
+}
 
 def scan_with_groq(image_bytes, content_type):
     api_key = os.environ.get("GROQ_API_KEY", "")
@@ -115,10 +129,19 @@ def scan_with_groq(image_bytes, content_type):
         amt = int(item.get('amount', 0))
         if amt <= 0:
             continue
+
+        # Auto-convert foreign currency to VND
+        currency = item.get('currency', 'VND').upper().strip()
+        detail = item.get('detail', '')[:80]
+        if currency != 'VND' and currency in EXCHANGE_RATES:
+            original_amt = amt
+            amt = int(amt * EXCHANGE_RATES[currency])
+            detail = f"{detail} ({original_amt} {currency})"
+
         result.append({
             'date': item.get('date', today_str),
             'category': cat,
-            'detail': item.get('detail', '')[:80],
+            'detail': detail,
             'amount': amt,
         })
     return result
