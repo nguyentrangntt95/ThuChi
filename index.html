@@ -9,6 +9,7 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
+<script src="https://unpkg.com/tesseract.js@5/dist/tesseract.min.js"></script>
 <script>
 tailwind.config = {
   darkMode: 'class',
@@ -42,6 +43,67 @@ const api = async (path, opts) => {
 const fmt = (n) => new Intl.NumberFormat('vi-VN').format(n);
 const today = () => new Date().toISOString().slice(0, 10);
 const monthOf = (d) => d.slice(0, 7);
+
+// ── OCR & Auto-categorize ──
+const CAT_KEYWORDS = {
+  food: ['cafe','coffee','cà phê','trà','tea','cơm','phở','bún','mì','bánh','ăn','nhà hàng','quán','food','grab food','shopeefood','bếp','gà','bò','heo','cá','tôm','lẩu','nước','sinh tố','kem','pizza','burger','sushi','beer','bia','rượu','đồ uống','ăn sáng','ăn trưa','ăn tối','highland','starbucks','cheese','gỏi','chả','xôi','hủ tiếu','cháo','kfc','lotteria','mcdonalds','jollibee','gong cha','tocotoco','phúc long','the coffee house'],
+  transport: ['grab','taxi','xăng','gojek','be','uber','parking','đỗ xe','gửi xe','vé xe','xe buýt','bus','xe máy','ô tô','toll','phí cầu đường','sân bay','vé máy bay','railway','tàu','metro'],
+  shopping: ['shopee','lazada','tiki','sendo','siêu thị','vinmart','bách hóa','coopmart','big c','lotte','aeon','quần','áo','giày','dép','túi','mỹ phẩm','son','kem chống','đồ gia dụng','nội thất','điện thoại','laptop','máy tính','tai nghe'],
+  entertainment: ['phim','cinema','cgv','lotte cinema','game','karaoke','nhạc','concert','show','vé','du lịch','khách sạn','hotel','resort','spa','massage','netflix','spotify','youtube'],
+  bills: ['điện','nước','internet','wifi','thuê nhà','tiền nhà','phí quản lý','bảo hiểm','thuế','trả góp','vay','credit','thẻ','ngân hàng','chuyển khoản','gas'],
+  health: ['thuốc','bệnh viện','khám','pharmacy','nhà thuốc','bác sĩ','doctor','y tế','răng','mắt','vitamin','thực phẩm chức năng','gym','tập','yoga','fitness'],
+  education: ['sách','học','course','khóa học','udemy','coursera','học phí','trường','lớp','gia sư','tiếng anh','english'],
+};
+
+function classifyCategory(text) {
+  const lower = text.toLowerCase();
+  let best = 'other', bestCount = 0;
+  for (const [cat, keywords] of Object.entries(CAT_KEYWORDS)) {
+    let count = 0;
+    for (const kw of keywords) {
+      if (lower.includes(kw)) count++;
+    }
+    if (count > bestCount) { bestCount = count; best = cat; }
+  }
+  return best;
+}
+
+function extractAmount(text) {
+  // Match Vietnamese currency patterns: 50.000, 50,000, 50000đ, 50.000 VND, etc.
+  const patterns = [
+    /(\d{1,3}(?:[.,]\d{3})+)\s*(?:đ|vnd|vnđ|dong)/gi,
+    /(?:tổng|total|thành tiền|thanh toán|amount|giá|price)[\s:]*(\d{1,3}(?:[.,]\d{3})+)/gi,
+    /(\d{1,3}(?:[.,]\d{3})+)\s*(?:đ|vnd)/gi,
+    /(\d{1,3}(?:[.,]\d{3})+)/g,
+  ];
+  let amounts = [];
+  for (const pat of patterns) {
+    let m;
+    while ((m = pat.exec(text)) !== null) {
+      const num = parseInt(m[1].replace(/[.,]/g, ''));
+      if (num >= 1000 && num <= 999999999) amounts.push(num);
+    }
+    if (amounts.length > 0) break;
+  }
+  // Return the largest amount (likely the total)
+  return amounts.length > 0 ? Math.max(...amounts) : 0;
+}
+
+function extractDetail(text) {
+  // Clean up OCR text, take first meaningful line as detail
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 3 && l.length < 100);
+  // Skip lines that are just numbers or dates
+  const meaningful = lines.filter(l => !/^\d+[.,\d]*$/.test(l) && !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(l));
+  return meaningful.slice(0, 2).join(' - ').slice(0, 80) || '';
+}
+
+async function processImage(file) {
+  const { data: { text } } = await Tesseract.recognize(file, 'vie+eng', {});
+  const amount = extractAmount(text);
+  const category = classifyCategory(text);
+  const detail = extractDetail(text);
+  return { amount, category, detail, rawText: text };
+}
 
 const CATEGORIES = [
   { id: 'food', name: 'Ăn uống', emoji: '🍜', color: 'bg-orange-500', hex: '#f97316' },
@@ -261,7 +323,27 @@ function ExpenseForm({ expense, onSave, onClose }) {
   const [category, setCategory] = useState(expense?.category || 'food');
   const [detail, setDetail] = useState(expense?.detail || '');
   const [amount, setAmount] = useState(expense?.amount?.toString() || '');
+  const [scanning, setScanning] = useState(false);
+  const [scanPreview, setScanPreview] = useState(null);
+  const fileRef = useRef(null);
   const amountRef = useRef(null);
+
+  const handleScan = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setScanPreview(URL.createObjectURL(file));
+    setScanning(true);
+    try {
+      const result = await processImage(file);
+      if (result.amount) setAmount(result.amount.toString());
+      if (result.category) setCategory(result.category);
+      if (result.detail) setDetail(result.detail);
+    } catch (err) {
+      console.error('OCR error:', err);
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const handleSave = () => {
     const n = parseInt(amount.replace(/\D/g, ''));
@@ -277,6 +359,37 @@ function ExpenseForm({ expense, onSave, onClose }) {
         <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-4">
           {expense ? 'Sửa chi tiêu' : 'Thêm chi tiêu'}
         </h2>
+
+        {/* Scan receipt */}
+        {!expense && (
+          <div className="mb-4">
+            <input ref={fileRef} type="file" accept="image/*" capture="environment" onChange={handleScan} className="hidden" />
+            <button onClick={() => fileRef.current?.click()} disabled={scanning}
+              className="w-full py-3 rounded-xl border-2 border-dashed border-zinc-300 dark:border-zinc-600 hover:border-emerald-400 dark:hover:border-emerald-500 transition-colors flex items-center justify-center gap-2 text-sm text-zinc-500 dark:text-zinc-400 disabled:opacity-50">
+              {scanning ? (
+                <>
+                  <svg className="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10" strokeDasharray="31.4 31.4" strokeLinecap="round"/></svg>
+                  Đang đọc hóa đơn...
+                </>
+              ) : (
+                <>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                  📸 Chụp / tải ảnh hóa đơn
+                </>
+              )}
+            </button>
+            {scanPreview && (
+              <div className="mt-2 relative">
+                <img src={scanPreview} className="w-full h-32 object-cover rounded-lg" />
+                {scanning && (
+                  <div className="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center">
+                    <div className="text-white text-xs font-medium">Đang xử lý...</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Date */}
         <div className="mb-3">
