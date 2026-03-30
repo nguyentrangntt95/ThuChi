@@ -43,6 +43,12 @@ input[type="number"]{-moz-appearance:textfield}
 /* Gap & Spacing */
 .gap-1{gap:.25rem}.gap-1\.5{gap:.375rem}.gap-2{gap:.5rem}.gap-3{gap:.75rem}.gap-4{gap:1rem}
 .space-y-1\.5>:not([hidden])~:not([hidden]){margin-top:.375rem}
+.space-y-2>:not([hidden])~:not([hidden]){margin-top:.5rem}
+.flex-wrap{flex-wrap:wrap}
+.cursor-pointer{cursor:pointer}
+.w-6{width:1.5rem}.h-6{height:1.5rem}
+.max-h-64{max-height:16rem}
+select{appearance:auto}
 
 /* Sizing */
 .w-2\.5{width:.625rem}.w-5{width:1.25rem}.w-9{width:2.25rem}.w-20{width:5rem}.w-28{width:7rem}.w-full{width:100%}
@@ -397,6 +403,250 @@ function CategoryChart({ expenses }) {
   `;
 }
 
+// ── Dashboard Charts ──
+
+function DailySpendingChart({ expenses }) {
+  const data = useMemo(() => {
+    const byDate = {};
+    expenses.forEach(e => { byDate[e.date] = (byDate[e.date] || 0) + e.amount; });
+    return Object.entries(byDate).sort((a,b) => a[0].localeCompare(b[0])).slice(-14);
+  }, [expenses]);
+
+  if (data.length < 2) return null;
+  const max = Math.max(...data.map(d => d[1]));
+  const avg = data.reduce((s,d) => s + d[1], 0) / data.length;
+  const W = 300, H = 130, pad = 25, barW = Math.min(16, (W - pad) / data.length - 2);
+
+  return html`
+    <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">Chi tiêu hàng ngày</h3>
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
+        <!-- avg line -->
+        <line x1="${pad}" y1="${pad + (1 - avg/max) * (H - pad*2)}" x2="${W}" y2="${pad + (1 - avg/max) * (H - pad*2)}" stroke="#a1a1aa" stroke-width="0.5" stroke-dasharray="3,3" />
+        <text x="${pad - 2}" y="${pad + (1 - avg/max) * (H - pad*2) - 3}" text-anchor="end" class="fill-zinc-400" style="font-size:7px">TB</text>
+        ${data.map((d, i) => {
+          const barH = max > 0 ? (d[1] / max) * (H - pad*2) : 0;
+          const x = pad + i * ((W - pad) / data.length) + ((W - pad) / data.length - barW) / 2;
+          const y = H - pad - barH;
+          return html`
+            <g key=${d[0]}>
+              <rect x=${x} y=${y} width=${barW} height=${barH} rx="2" fill="#10b981" opacity="0.8" />
+              <text x=${x + barW/2} y=${H - pad + 10} text-anchor="middle" class="fill-zinc-400" style="font-size:7px">${d[0].slice(8)}</text>
+            </g>
+          `;
+        })}
+      </svg>
+      <p class="text-xs text-zinc-400 mt-1 text-center">Trung bình: ${fmt(Math.round(avg))}đ/ngày</p>
+    </div>
+  `;
+}
+
+function MonthlyComparisonChart({ expenses, budgets }) {
+  const data = useMemo(() => {
+    const byMonth = {};
+    expenses.forEach(e => {
+      const m = monthOf(e.date);
+      byMonth[m] = (byMonth[m] || 0) + e.amount;
+    });
+    const months = Object.keys(byMonth).sort().slice(-6);
+    return months.map(m => ({ month: m, total: byMonth[m] || 0, budget: budgets[m] || 0 }));
+  }, [expenses, budgets]);
+
+  if (data.length < 2) return null;
+  const max = Math.max(...data.map(d => Math.max(d.total, d.budget)));
+  const W = 300, H = 140, pad = 25, barW = Math.min(30, (W - pad) / data.length - 8);
+
+  const monthNames = ['','Th1','Th2','Th3','Th4','Th5','Th6','Th7','Th8','Th9','Th10','Th11','Th12'];
+
+  return html`
+    <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">So sánh theo tháng</h3>
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
+        ${data.map((d, i) => {
+          const barH = max > 0 ? (d.total / max) * (H - pad*2) : 0;
+          const x = pad + i * ((W - pad) / data.length) + ((W - pad) / data.length - barW) / 2;
+          const y = H - pad - barH;
+          const overBudget = d.budget > 0 && d.total > d.budget;
+          const monthNum = parseInt(d.month.slice(5));
+          return html`
+            <g key=${d.month}>
+              <rect x=${x} y=${y} width=${barW} height=${barH} rx="3" fill=${overBudget ? '#ef4444' : '#10b981'} opacity="0.8" />
+              ${d.budget > 0 && html`
+                <line x1=${x - 3} y1=${H - pad - (d.budget / max) * (H - pad*2)} x2=${x + barW + 3} y2=${H - pad - (d.budget / max) * (H - pad*2)} stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3,2" />
+              `}
+              <text x=${x + barW/2} y=${H - pad + 12} text-anchor="middle" class="fill-zinc-400" style="font-size:8px">${monthNames[monthNum]}</text>
+              <text x=${x + barW/2} y=${y - 4} text-anchor="middle" class="fill-zinc-500" style="font-size:7px">${d.total >= 1000000 ? (d.total/1000000).toFixed(1)+'tr' : d.total >= 1000 ? Math.round(d.total/1000)+'k' : d.total}</text>
+            </g>
+          `;
+        })}
+      </svg>
+      <div class="flex items-center justify-center gap-4 mt-1">
+        <span class="flex items-center gap-1 text-xs text-zinc-400"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#10b981"></span> Chi tiêu</span>
+        <span class="flex items-center gap-1 text-xs text-zinc-400"><span style="display:inline-block;width:12px;border-top:2px dashed #f59e0b"></span> Ngân sách</span>
+      </div>
+    </div>
+  `;
+}
+
+function CategoryTrendChart({ expenses }) {
+  const data = useMemo(() => {
+    const byMonthCat = {};
+    expenses.forEach(e => {
+      const m = monthOf(e.date);
+      if (!byMonthCat[m]) byMonthCat[m] = {};
+      byMonthCat[m][e.category] = (byMonthCat[m][e.category] || 0) + e.amount;
+    });
+    const months = Object.keys(byMonthCat).sort().slice(-6);
+    return months.map(m => ({
+      month: m,
+      cats: CATEGORIES.map(c => ({ ...c, total: byMonthCat[m]?.[c.id] || 0 })),
+      total: Object.values(byMonthCat[m] || {}).reduce((s,v) => s+v, 0)
+    }));
+  }, [expenses]);
+
+  if (data.length < 2) return null;
+  const max = Math.max(...data.map(d => d.total));
+  const W = 300, H = 130, pad = 25, barW = Math.min(28, (W - pad) / data.length - 8);
+  const monthNames = ['','Th1','Th2','Th3','Th4','Th5','Th6','Th7','Th8','Th9','Th10','Th11','Th12'];
+
+  return html`
+    <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">Xu hướng danh mục</h3>
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
+        ${data.map((d, i) => {
+          const x = pad + i * ((W - pad) / data.length) + ((W - pad) / data.length - barW) / 2;
+          const totalH = max > 0 ? (d.total / max) * (H - pad*2) : 0;
+          let yOff = H - pad;
+          const monthNum = parseInt(d.month.slice(5));
+          return html`
+            <g key=${d.month}>
+              ${d.cats.filter(c => c.total > 0).map(c => {
+                const segH = max > 0 ? (c.total / max) * (H - pad*2) : 0;
+                yOff -= segH;
+                return html`<rect key=${c.id} x=${x} y=${yOff} width=${barW} height=${segH} fill=${c.hex} opacity="0.85" />`;
+              })}
+              <text x=${x + barW/2} y=${H - pad + 12} text-anchor="middle" class="fill-zinc-400" style="font-size:8px">${monthNames[monthNum]}</text>
+            </g>
+          `;
+        })}
+      </svg>
+      <div class="flex flex-wrap gap-2 mt-2 justify-center">
+        ${CATEGORIES.filter(c => data.some(d => d.cats.find(dc => dc.id === c.id && dc.total > 0))).map(c => html`
+          <span key=${c.id} class="flex items-center gap-1 text-xs text-zinc-400">
+            <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${c.hex}"></span> ${c.name}
+          </span>
+        `)}
+      </div>
+    </div>
+  `;
+}
+
+function TopExpenses({ expenses, onEdit }) {
+  const top5 = useMemo(() =>
+    [...expenses].sort((a, b) => b.amount - a.amount).slice(0, 5),
+    [expenses]
+  );
+
+  if (top5.length === 0) return null;
+
+  return html`
+    <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">\u{1F3C6} Top 5 khoản lớn nhất</h3>
+      <div class="space-y-1.5">
+        ${top5.map((e, i) => {
+          const cat = catMap[e.category] || catMap.other;
+          return html`
+            <div key=${e.id || i} class="flex items-center gap-2.5 py-1.5 cursor-pointer rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-700 px-1 transition-colors" onClick=${() => onEdit(e)}>
+              <span class="text-xs font-bold text-zinc-300 dark:text-zinc-600 w-5 text-center">${i+1}</span>
+              <span class="text-base">${cat.emoji}</span>
+              <div class="flex-1 min-w-0">
+                <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate">${e.detail || cat.name}</p>
+                <p class="text-xs text-zinc-400">${e.date.slice(5)}</p>
+              </div>
+              <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">${fmt(e.amount)}đ</span>
+            </div>
+          `;
+        })}
+      </div>
+    </div>
+  `;
+}
+
+function WeekdayChart({ expenses }) {
+  const data = useMemo(() => {
+    const days = [0,0,0,0,0,0,0];
+    const counts = [0,0,0,0,0,0,0];
+    expenses.forEach(e => {
+      const d = new Date(e.date + 'T00:00:00').getDay();
+      days[d] += e.amount;
+      counts[d]++;
+    });
+    const labels = ['CN','T2','T3','T4','T5','T6','T7'];
+    return labels.map((label, i) => ({
+      label,
+      avg: counts[i] > 0 ? Math.round(days[i] / counts[i]) : 0,
+      total: days[i]
+    }));
+  }, [expenses]);
+
+  const maxAvg = Math.max(...data.map(d => d.avg));
+  if (maxAvg === 0) return null;
+
+  const W = 300, H = 100, pad = 20, barW = 25;
+
+  return html`
+    <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">\u{1F4C5} Chi tiêu theo thứ</h3>
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
+        ${data.map((d, i) => {
+          const barH = maxAvg > 0 ? (d.avg / maxAvg) * (H - pad*2) : 0;
+          const x = pad + i * ((W - pad*2) / 7) + ((W - pad*2) / 7 - barW) / 2;
+          const y = H - pad - barH;
+          const isWeekend = i === 0 || i === 6;
+          return html`
+            <g key=${i}>
+              <rect x=${x} y=${y} width=${barW} height=${barH} rx="3" fill=${isWeekend ? '#f97316' : '#3b82f6'} opacity="0.75" />
+              <text x=${x + barW/2} y=${H - pad + 12} text-anchor="middle" class="fill-zinc-500" style="font-size:8px;font-weight:${isWeekend ? '600' : '400'}">${d.label}</text>
+              ${d.avg > 0 && html`<text x=${x + barW/2} y=${y - 3} text-anchor="middle" class="fill-zinc-400" style="font-size:6px">${d.avg >= 1000000 ? (d.avg/1000000).toFixed(1)+'tr' : Math.round(d.avg/1000)+'k'}</text>`}
+            </g>
+          `;
+        })}
+      </svg>
+      <div class="flex items-center justify-center gap-4 mt-1">
+        <span class="flex items-center gap-1 text-xs text-zinc-400"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#3b82f6"></span> Ngày thường</span>
+        <span class="flex items-center gap-1 text-xs text-zinc-400"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#f97316"></span> Cuối tuần</span>
+      </div>
+    </div>
+  `;
+}
+
+function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit }) {
+  const [expanded, setExpanded] = useState(() => load('tc-dash', true));
+  useEffect(() => { save('tc-dash', expanded); }, [expanded]);
+
+  return html`
+    <div>
+      <div class="mx-4 mt-4">
+        <button onClick=${() => setExpanded(!expanded)}
+          class="w-full flex items-center justify-between px-4 py-2.5 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700">
+          <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">\u{1F4CA} Insights</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform:rotate(${expanded ? '180' : '0'}deg);transition:transform 0.2s"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
+      ${expanded && html`
+        <div class="fade-in">
+          <${CategoryChart} expenses=${rangeExpenses} />
+          <${DailySpendingChart} expenses=${rangeExpenses} />
+          <${MonthlyComparisonChart} expenses=${allExpenses} budgets=${budgets} />
+          <${CategoryTrendChart} expenses=${allExpenses} />
+          <${TopExpenses} expenses=${rangeExpenses} onEdit=${onEdit} />
+          <${WeekdayChart} expenses=${rangeExpenses} />
+        </div>
+      `}
+    </div>
+  `;
+}
+
 function QRModal({ onClose }) {
   const url = window.location.href;
   const qrRef = useRef(null);
@@ -525,7 +775,7 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
     try {
       const items = await scanImage(file);
       if (items.length > 1) {
-        setScanResults(items);
+        setScanResults(items.map(it => ({ ...it, _id: uid() })));
       } else if (items.length === 1) {
         const item = items[0];
         if (item.amount) setAmount(item.amount.toString());
@@ -542,8 +792,22 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
 
   const handleSaveBulk = () => {
     if (scanResults && scanResults.length > 0) {
-      onSaveBulk(scanResults);
+      const cleaned = scanResults.filter(it => it.amount > 0).map(({_id, ...rest}) => rest);
+      if (cleaned.length > 0) onSaveBulk(cleaned);
     }
+  };
+
+  const updateScanItem = (itemId, field, value) => {
+    setScanResults(prev => prev.map(item =>
+      item._id === itemId ? { ...item, [field]: field === 'amount' ? (parseInt(value.replace(/\D/g,'')) || 0) : value } : item
+    ));
+  };
+
+  const deleteScanItem = (itemId) => {
+    setScanResults(prev => {
+      const next = prev.filter(it => it._id !== itemId);
+      return next.length > 0 ? next : null;
+    });
   };
 
   const handleSave = () => {
@@ -590,20 +854,33 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
                 <button onClick=${() => { setScanPreview(null); setScanResults(null); }} class="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-600 text-white rounded-full text-xs flex items-center justify-center">\u00D7</button>
               </div>
             `}
-            ${scanResults && scanResults.length > 1 && html`
+            ${scanResults && scanResults.length >= 1 && html`
               <div class="mt-3 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800">
                 <p class="text-xs font-semibold text-emerald-700 dark:text-emerald-300 mb-2">
-                  Phát hiện ${scanResults.length} khoản chi tiêu:
+                  Phát hiện ${scanResults.length} khoản chi tiêu (chỉnh sửa trước khi lưu):
                 </p>
-                <div class="space-y-1.5 max-h-48 overflow-y-auto">
-                  ${scanResults.map((item, i) => {
-                    const c = catMap[item.category] || catMap.other;
+                <div class="space-y-2 max-h-64 overflow-y-auto">
+                  ${scanResults.map((item) => {
                     return html`
-                      <div key=${i} class="flex items-center gap-2 text-xs bg-white dark:bg-zinc-800 rounded-lg px-2.5 py-2">
-                        <span>${c.emoji}</span>
-                        <span class="flex-1 truncate text-zinc-700 dark:text-zinc-300">${item.detail || c.name}</span>
-                        <span class="text-zinc-400">${item.date.slice(5)}</span>
-                        <span class="font-semibold text-zinc-800 dark:text-zinc-200">${fmt(item.amount)}đ</span>
+                      <div key=${item._id} class="bg-white dark:bg-zinc-800 rounded-lg p-2.5 border border-zinc-200 dark:border-zinc-700">
+                        <div class="flex items-center gap-1.5 mb-1.5">
+                          <select value=${item.category} onChange=${e => updateScanItem(item._id, 'category', e.target.value)}
+                            class="px-1.5 py-1 rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" style="max-width:5.5rem">
+                            ${CATEGORIES.map(c => html`<option key=${c.id} value=${c.id}>${c.emoji} ${c.name}</option>`)}
+                          </select>
+                          <input value=${item.detail} onInput=${e => updateScanItem(item._id, 'detail', e.target.value)}
+                            placeholder="Chi tiết..." class="flex-1 min-w-0 px-2 py-1 rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                          <button onClick=${() => deleteScanItem(item._id)} class="shrink-0 w-6 h-6 flex items-center justify-center rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors text-sm">\u00D7</button>
+                        </div>
+                        <div class="flex items-center gap-1.5">
+                          <input type="date" value=${item.date} onChange=${e => updateScanItem(item._id, 'date', e.target.value)}
+                            class="px-1.5 py-1 rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                          <div class="flex-1 relative">
+                            <input type="text" inputMode="numeric" value=${item.amount} onInput=${e => updateScanItem(item._id, 'amount', e.target.value)}
+                              class="w-full px-2 py-1 rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs font-semibold text-right focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+                          </div>
+                          <span class="text-xs text-zinc-400 shrink-0">đ</span>
+                        </div>
                       </div>
                     `;
                   })}
@@ -611,7 +888,7 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose }) {
                 <div class="flex gap-2 mt-3">
                   <button onClick=${() => setScanResults(null)} class="flex-1 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 text-zinc-600 dark:text-zinc-300 text-xs font-medium">Hủy</button>
                   <button onClick=${handleSaveBulk} class="flex-1 py-2 rounded-lg bg-emerald-500 text-white text-xs font-medium hover:bg-emerald-600 transition-colors">
-                    Thêm tất cả (${scanResults.length})
+                    Thêm tất cả (${scanResults.filter(it => it.amount > 0).length})
                   </button>
                 </div>
               </div>
@@ -833,7 +1110,7 @@ function App() {
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} />
         <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} />
-        <${CategoryChart} expenses=${rangeExpenses} />
+        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} />
 
         <div class="px-4 mt-4 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
           <button onClick=${() => setFilterCat('all')}
