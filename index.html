@@ -90,11 +90,17 @@ function extractAmount(text) {
 }
 
 function extractDetail(text) {
-  // Clean up OCR text, take first meaningful line as detail
-  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 3 && l.length < 100);
-  // Skip lines that are just numbers or dates
-  const meaningful = lines.filter(l => !/^\d+[.,\d]*$/.test(l) && !/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}$/.test(l));
-  return meaningful.slice(0, 2).join(' - ').slice(0, 80) || '';
+  const lower = text.toLowerCase();
+  // Try to find a known brand/store name first
+  const brands = ['highland','starbucks','phúc long','the coffee house','tocotoco','gong cha','kfc','lotteria','jollibee','mcdonalds','grab','shopee','lazada','tiki','circle k','ministop','gs25','family mart','7-eleven','vinmart','coopmart','big c','lotte','aeon','cgv','pizza','bách hóa xanh'];
+  for (const b of brands) {
+    if (lower.includes(b)) return b.charAt(0).toUpperCase() + b.slice(1);
+  }
+  // Otherwise find the best line: skip junk like addresses, dates, numbers, short garbage
+  const lines = text.split('\n').map(l => l.trim()).filter(l => l.length >= 4 && l.length <= 60);
+  const junk = /^[\d.,\s%:\/\-\(\)]+$|^\d{1,2}[\/\-]|^(tel|phone|đt|sđt|hotline|fax|email|www|http|địa chỉ|add|tax|mã|no\.|bill|order|inv|receipt|hóa đơn)/i;
+  const good = lines.filter(l => !junk.test(l));
+  return good.length > 0 ? good[0].slice(0, 60) : '';
 }
 
 async function processImage(file) {
@@ -340,9 +346,10 @@ function ExpenseForm({ expense, onSave, onClose }) {
       if (result.detail) setDetail(result.detail);
     } catch (err) {
       console.error('OCR error:', err);
-    } finally {
-      setScanning(false);
     }
+    setScanning(false);
+    // Reset file input so same file can be re-selected
+    if (fileRef.current) fileRef.current.value = '';
   };
 
   const handleSave = () => {
@@ -379,13 +386,9 @@ function ExpenseForm({ expense, onSave, onClose }) {
               )}
             </button>
             {scanPreview && (
-              <div className="mt-2 relative">
-                <img src={scanPreview} className="w-full h-32 object-cover rounded-lg" />
-                {scanning && (
-                  <div className="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center">
-                    <div className="text-white text-xs font-medium">Đang xử lý...</div>
-                  </div>
-                )}
+              <div className="mt-2 relative inline-block">
+                <img src={scanPreview} className="h-20 rounded-lg object-cover" />
+                <button onClick={() => { setScanPreview(null); }} className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-zinc-600 text-white rounded-full text-xs flex items-center justify-center">&times;</button>
               </div>
             )}
           </div>
