@@ -125,7 +125,14 @@ SCAN_PROMPT = """Bạn là trợ lý phân tích hóa đơn/chi tiêu. Hãy xem 
 Nếu ảnh là 1 hóa đơn/bill duy nhất → trả về 1 khoản.
 Nếu ảnh là sao kê ngân hàng, lịch sử giao dịch, hoặc có nhiều khoản riêng biệt → trả về NHIỀU khoản, mỗi giao dịch 1 khoản.
 
-Chỉ lấy các khoản CHI (tiền ra), bỏ qua các khoản thu (tiền vào).
+QUAN TRỌNG - PHÂN BIỆT TIỀN VÀO VÀ TIỀN RA:
+- Chỉ lấy các khoản CHI (tiền ra/tiền trừ). BỎ QUA hoàn toàn các khoản THU (tiền vào/tiền cộng).
+- Trong app ngân hàng: số tiền màu XANH LÁ/xanh dương thường là TIỀN VÀO (nhận tiền, hoàn tiền) → BỎ QUA.
+- Số tiền màu ĐEN/ĐỎ hoặc có dấu trừ (-) thường là TIỀN RA (chi tiêu) → LẤY.
+- Nếu có ký hiệu +/cộng trước số tiền → TIỀN VÀO → BỎ QUA.
+- Nếu có ký hiệu -/trừ trước số tiền → TIỀN RA → LẤY.
+- Nếu ghi "nhận tiền", "chuyển đến", "hoàn tiền", "tiền thưởng", "lương" → BỎ QUA.
+- Nếu ghi "thanh toán", "chuyển tiền", "mua", "chi" → LẤY.
 
 QUY TẮC PHÂN LOẠI (BẮT BUỘC tuân theo):
 - MOCA, GrabFood, GrabMart, ShopeeFood, Baemin → food (ăn uống)
