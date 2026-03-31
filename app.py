@@ -255,15 +255,17 @@ def login():
     pw_hash = hashlib.sha256(password.encode()).hexdigest()
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT user_code FROM users WHERE user_code=%s AND password_hash=%s", (user_code, pw_hash))
+    cur.execute("SELECT user_code, token FROM users WHERE user_code=%s AND password_hash=%s", (user_code, pw_hash))
     user = cur.fetchone()
     if not user:
         cur.close()
         conn.close()
         return jsonify({"error": "Sai mã hoặc mật khẩu"}), 401
-    # Generate new token on each login
-    token = generate_token()
-    cur.execute("UPDATE users SET token=%s WHERE user_code=%s", (token, user_code))
+    # Reuse existing token so other devices stay logged in
+    token = user.get('token')
+    if not token:
+        token = generate_token()
+        cur.execute("UPDATE users SET token=%s WHERE user_code=%s", (token, user_code))
     conn.commit()
     cur.close()
     conn.close()

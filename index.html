@@ -437,6 +437,7 @@ function findDuplicates(expenses, date, amount) {
 // ── Components ──
 
 function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
+  const [showCustom, setShowCustom] = useState(false);
   const presets = [
     { label: 'Hôm nay', fn: () => { const t = today(); onChangeFrom(t); onChangeTo(t); } },
     { label: 'Tuần này', fn: () => {
@@ -447,7 +448,7 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
     { label: 'Tháng này', fn: () => {
       const t = today(); onChangeFrom(t.slice(0,8) + '01'); onChangeTo(t);
     }},
-    { label: 'Tháng trước', fn: () => {
+    { label: 'T.trước', fn: () => {
       const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1);
       const first = d.toISOString().slice(0,10);
       d.setMonth(d.getMonth() + 1); d.setDate(0);
@@ -461,22 +462,28 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
   ];
 
   return html`
-    <div class="px-4 pt-3">
-      <div class="flex gap-2 overflow-x-auto pb-2 scrollbar-none">
+    <div class="px-4 pt-2">
+      <div class="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
         ${presets.map(p => html`
-          <button key=${p.label} onClick=${p.fn}
-            class="shrink-0 px-3 py-1 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 transition-colors">
+          <button key=${p.label} onClick=${() => { p.fn(); setShowCustom(false); }}
+            class="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 transition-colors">
             ${p.label}
           </button>
         `)}
+        <button onClick=${() => setShowCustom(!showCustom)}
+          class="shrink-0 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${showCustom ? 'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="display:inline;vertical-align:-1px"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </button>
       </div>
-      <div class="flex items-center gap-2 mt-1">
-        <input type="date" value=${from} onChange=${e => onChangeFrom(e.target.value)}
-          class="flex-1 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" />
-        <span class="text-zinc-400 text-xs">\u2192</span>
-        <input type="date" value=${to} onChange=${e => onChangeTo(e.target.value)}
-          class="flex-1 px-2 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" />
-      </div>
+      ${showCustom && html`
+        <div class="flex items-center gap-2 mt-1.5">
+          <input type="date" value=${from} onChange=${e => onChangeFrom(e.target.value)}
+            class="flex-1 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+          <span class="text-zinc-400 text-xs">\u2192</span>
+          <input type="date" value=${to} onChange=${e => onChangeTo(e.target.value)}
+            class="flex-1 px-2 py-1 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+        </div>
+      `}
     </div>
   `;
 }
@@ -488,7 +495,6 @@ function BudgetBar({ total, budget, onSetBudget, month, dark }) {
   const over = budget > 0 && total > budget;
   const warn = budget > 0 && total > budget * 0.8 && !over;
   const remain = budget > 0 ? budget - total : 0;
-  const monthLabel = month.slice(0, 4) === new Date().getFullYear().toString() ? 'Tháng ' + parseInt(month.slice(5)) : month;
 
   const handleSave = () => {
     const n = parseInt(val.replace(/\D/g, ''));
@@ -497,44 +503,45 @@ function BudgetBar({ total, budget, onSetBudget, month, dark }) {
   };
 
   return html`
-    <div class="mx-4 mt-3 p-4 rounded-xl" style="background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#334155' : '#e4e4e7'}">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-sm font-semibold" style="color:${dark ? '#f1f5f9' : '#27272a'}">${monthLabel}</span>
-        ${!editing ? html`
-          <button onClick=${() => { setVal(budget > 0 ? budget.toString() : ''); setEditing(true); }}
-            class="text-xs px-2.5 py-1 rounded-lg hover:opacity-80 transition-colors"
-            style="background:${budget > 0 ? (dark ? '#334155' : '#f4f4f5') : (dark ? '#064e3b' : '#ecfdf5')};color:${budget > 0 ? (dark ? '#94a3b8' : '#71717a') : (dark ? '#34d399' : '#059669')}">
-            ${budget > 0 ? 'Sửa ngân sách' : '+ Đặt ngân sách'}
-          </button>
-        ` : html`
-          <div class="flex items-center gap-1.5">
-            <input value=${val} onInput=${e => setVal(e.target.value)} placeholder="VD: 5000000"
-              class="w-28 px-2 py-1 text-xs rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              style="background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#475569' : '#d4d4d8'};color:${dark ? '#e2e8f0' : '#27272a'}"
-              autofocus onKeyDown=${e => e.key === 'Enter' && handleSave()} />
-            <button onClick=${handleSave} class="text-xs font-medium px-2 py-1 rounded-lg" style="color:#10b981">OK</button>
-            <button onClick=${() => setEditing(false)} class="text-xs px-2 py-1" style="color:${dark ? '#94a3b8' : '#a1a1aa'}">Hủy</button>
-          </div>
-        `}
-      </div>
-      <div class="flex items-end justify-between mb-2">
-        <div>
-          <p class="text-2xl font-bold tracking-tight" style="color:${over ? '#ef4444' : dark ? '#f1f5f9' : '#18181b'}">${fmt(total)}đ</p>
-          ${budget > 0 && html`<p class="text-xs mt-0.5" style="color:${dark ? '#64748b' : '#a1a1aa'}">/ ${fmt(budget)}đ</p>`}
+    <div class="mx-4 mt-2 px-3.5 py-2.5 rounded-xl" style="background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#334155' : '#e4e4e7'}">
+      ${editing ? html`
+        <div class="flex items-center gap-2">
+          <span class="text-xs" style="color:${dark ? '#94a3b8' : '#71717a'}">Ngân sách:</span>
+          <input value=${val} onInput=${e => setVal(e.target.value)} placeholder="VD: 5000000"
+            class="flex-1 px-2 py-1 text-xs rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            style="background:${dark ? '#0f172a' : '#f9fafb'};border:1px solid ${dark ? '#475569' : '#d4d4d8'};color:${dark ? '#e2e8f0' : '#27272a'}"
+            autofocus onKeyDown=${e => e.key === 'Enter' && handleSave()} />
+          <button onClick=${handleSave} class="text-xs font-semibold px-2 py-1 rounded-lg" style="color:#10b981">OK</button>
+          <button onClick=${() => setEditing(false)} class="text-xs px-1.5 py-1" style="color:${dark ? '#94a3b8' : '#a1a1aa'}">Hủy</button>
         </div>
-        ${budget > 0 && html`
-          <div class="text-right">
-            <p class="text-lg font-bold" style="color:${over ? '#ef4444' : '#10b981'}">${Math.round(pct)}%</p>
-            <p class="text-xs" style="color:${over ? '#f87171' : '#10b981'}">
-              ${over ? 'Vượt ' + fmtShort(total - budget) : 'Còn ' + fmtShort(remain)}
-            </p>
+      ` : html`
+        <div class="flex items-center gap-3">
+          <div class="flex-1 min-w-0">
+            <div class="flex items-baseline gap-1.5">
+              <span class="text-xl font-bold tracking-tight" style="color:${over ? '#ef4444' : dark ? '#f1f5f9' : '#18181b'}">${fmtShort(total)}</span>
+              ${budget > 0 && html`<span class="text-xs" style="color:${dark ? '#64748b' : '#a1a1aa'}">/ ${fmtShort(budget)}</span>`}
+            </div>
+            ${budget > 0 && html`
+              <div class="h-1.5 rounded-full overflow-hidden mt-1.5" style="background:${dark ? '#334155' : '#f4f4f5'}">
+                <div class="h-full rounded-full transition-all duration-500"
+                  style="width:${pct}%;background:${over ? '#ef4444' : warn ? '#f59e0b' : '#10b981'}" />
+              </div>
+            `}
           </div>
-        `}
-      </div>
-      ${budget > 0 && html`
-        <div class="h-2.5 rounded-full overflow-hidden" style="background:${dark ? '#334155' : '#f4f4f5'}">
-          <div class="h-full rounded-full transition-all duration-500"
-            style="width:${pct}%;background:${over ? '#ef4444' : warn ? '#f59e0b' : '#10b981'}" />
+          ${budget > 0 ? html`
+            <div class="text-right shrink-0">
+              <span class="text-sm font-bold" style="color:${over ? '#ef4444' : '#10b981'}">${over ? 'Vượt ' + fmtShort(total - budget) : 'Còn ' + fmtShort(remain)}</span>
+            </div>
+          ` : html`
+            <button onClick=${() => { setVal(''); setEditing(true); }}
+              class="shrink-0 text-xs px-2.5 py-1 rounded-lg" style="background:${dark ? '#064e3b' : '#ecfdf5'};color:${dark ? '#34d399' : '#059669'}">+ Ngân sách</button>
+          `}
+          ${budget > 0 && html`
+            <button onClick=${() => { setVal(budget.toString()); setEditing(true); }}
+              class="shrink-0 p-1 rounded-lg" style="color:${dark ? '#64748b' : '#a1a1aa'}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            </button>
+          `}
         </div>
       `}
     </div>
@@ -543,7 +550,7 @@ function BudgetBar({ total, budget, onSetBudget, month, dark }) {
 
 function PieChart({ data, grandTotal }) {
   const [active, setActive] = useState(-1);
-  const size = 160, cx = size/2, cy = size/2, r = 55;
+  const size = 130, cx = size/2, cy = size/2, r = 48;
   let cumAngle = -Math.PI / 2;
   const slices = data.map((d, i) => {
     const angle = (d.total / grandTotal) * Math.PI * 2;
@@ -569,7 +576,7 @@ function PieChart({ data, grandTotal }) {
           style="cursor:pointer;transition:opacity 0.15s"
           onMouseEnter=${() => setActive(s.idx)} onClick=${() => setActive(active === s.idx ? -1 : s.idx)} />
       `)}
-      <circle cx=${cx} cy=${cy} r="30" class="fill-white dark:fill-zinc-800" />
+      <circle cx=${cx} cy=${cy} r="25" class="fill-white dark:fill-zinc-800" />
       ${act ? html`
         <text x=${cx} y=${cy-6} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200" style="font-size:9px;font-weight:700">${fmtShort(act.total)}</text>
         <text x=${cx} y=${cy+6} text-anchor="middle" style="font-size:8px;font-weight:600" fill=${act.hex}>${act.emoji} ${Math.round(act.total/grandTotal*100)}%</text>
@@ -594,16 +601,15 @@ function CategoryChart({ expenses }) {
   const grandTotal = data.reduce((s, d) => s + d.total, 0);
 
   return html`
-    <div class="mx-4 mt-4 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
-      <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">Chi tiêu theo danh mục</h3>
-      <div class="flex gap-4 items-center">
+    <div class="mx-4 mt-2 p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <div class="flex gap-3 items-center">
         <${PieChart} data=${data} grandTotal=${grandTotal} />
-        <div class="flex-1 space-y-1.5">
+        <div class="flex-1 space-y-1">
           ${data.map(d => html`
-            <div key=${d.id} class="flex items-center gap-2 text-xs">
-              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:${d.hex}"></span>
+            <div key=${d.id} class="flex items-center gap-1.5 text-xs">
+              <span class="w-2 h-2 rounded-full shrink-0" style="background-color:${d.hex}"></span>
               <span class="text-zinc-600 dark:text-zinc-400 truncate">${d.emoji} ${d.name}</span>
-              <span class="ml-auto font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${fmtShort(d.total)} <span class="text-zinc-400">${Math.round(d.total/grandTotal*100)}%</span></span>
+              <span class="ml-auto font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${fmtShort(d.total)}</span>
             </div>
           `)}
         </div>
@@ -769,13 +775,27 @@ function CategoryTrendChart({ expenses }) {
   `;
 }
 
-function TopExpenses({ expenses, onEdit }) {
+function TopExpenses({ expenses }) {
   const top5 = useMemo(() =>
     [...expenses].sort((a, b) => b.amount - a.amount).slice(0, 5),
     [expenses]
   );
 
   if (top5.length === 0) return null;
+
+  const scrollToExpense = (e) => {
+    const dateEl = document.getElementById('date-' + e.date);
+    if (dateEl) dateEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Highlight the specific expense briefly
+    setTimeout(() => {
+      const expEl = document.getElementById('exp-' + e.id);
+      if (expEl) {
+        expEl.style.transition = 'background 0.3s';
+        expEl.style.background = '#d1fae5';
+        setTimeout(() => { expEl.style.background = ''; }, 1500);
+      }
+    }, 400);
+  };
 
   return html`
     <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
@@ -784,7 +804,7 @@ function TopExpenses({ expenses, onEdit }) {
         ${top5.map((e, i) => {
           const cat = catMap[e.category] || catMap.other;
           return html`
-            <div key=${e.id || i} class="flex items-center gap-2.5 py-1.5 cursor-pointer rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-700 px-1 transition-colors" onClick=${() => onEdit(e)}>
+            <div key=${e.id || i} class="flex items-center gap-2.5 py-1.5 cursor-pointer rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-700 px-1 transition-colors" onClick=${() => scrollToExpense(e)}>
               <span class="text-xs font-bold text-zinc-300 dark:text-zinc-600 w-5 text-center">${i+1}</span>
               <span class="text-base">${cat.emoji}</span>
               <div class="flex-1 min-w-0">
@@ -859,10 +879,10 @@ function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit }) {
 
   return html`
     <div>
-      <div class="mx-4 mt-4">
+      <div class="mx-4 mt-2">
         <button onClick=${() => setExpanded(!expanded)}
-          class="w-full flex items-center justify-between px-4 py-2.5 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700">
-          <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">\u{1F4CA} Insights</span>
+          class="w-full flex items-center justify-between px-3 py-2 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700">
+          <span class="text-xs font-semibold text-zinc-800 dark:text-zinc-200">\u{1F4CA} Insights</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform:rotate(${expanded ? '180' : '0'}deg);transition:transform 0.2s"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
       </div>
@@ -871,7 +891,7 @@ function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit }) {
           <${DailySpendingChart} expenses=${rangeExpenses} />
           <${MonthlyComparisonChart} expenses=${allExpenses} budgets=${budgets} />
           <${CategoryTrendChart} expenses=${allExpenses} />
-          <${TopExpenses} expenses=${rangeExpenses} onEdit=${onEdit} />
+          <${TopExpenses} expenses=${rangeExpenses} />
           <${WeekdayChart} expenses=${rangeExpenses} />
         </div>
       `}
@@ -949,7 +969,7 @@ function ExpenseRow({ expense, onEdit, onDelete }) {
   const catBg = cat.hex + '1a';
 
   return html`
-    <div class="relative overflow-hidden border-b border-zinc-100 dark:border-zinc-700/50 last:border-0">
+    <div id=${'exp-' + expense.id} class="relative overflow-hidden border-b border-zinc-100 dark:border-zinc-700/50 last:border-0">
       ${isMobile && html`
         <div class="absolute right-0 top-0 bottom-0 w-20 bg-red-500 flex items-center justify-center">
           <button onClick=${() => onDelete(expense.id)} class="text-white text-xs font-medium flex flex-col items-center gap-1">
@@ -1545,7 +1565,7 @@ function App() {
   return html`
     <div class="min-h-screen transition-colors ${dark ? 'bg-zinc-900' : 'bg-zinc-50'}">
       <header class="sticky top-0 z-40 backdrop-blur-md bg-white/80 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800">
-        <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
+        <div class="max-w-lg mx-auto px-4 py-2 flex items-center justify-between">
           <div class="flex items-center gap-2">
             <h1 class="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Thu Chi</h1>
             <span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium">${userCode}</span>
@@ -1608,19 +1628,19 @@ function App() {
         <${CategoryChart} expenses=${rangeExpenses} />
         <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} />
 
-        <div class="px-4 mt-4">
+        <div class="px-4 mt-2">
           <div class="relative flex items-center">
-            <svg class="absolute" style="left:0.75rem" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <svg class="absolute" style="left:0.75rem" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="text" value=${searchQuery} onInput=${e => setSearchQuery(e.target.value)}
-              placeholder="Tìm kiếm chi tiêu..."
-              class="w-full pl-9 pr-8 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-sm placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
+              placeholder="Tìm kiếm..."
+              class="w-full pl-8 pr-8 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
             ${searchQuery && html`
               <button onClick=${() => setSearchQuery('')} class="absolute right-2 top-1/2 text-zinc-400 hover:text-zinc-600 text-sm" style="transform:translateY(-50%)">\u00D7</button>
             `}
           </div>
         </div>
 
-        <div class="px-4 mt-3 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+        <div class="px-4 mt-1.5 flex gap-1.5 overflow-x-auto pb-1 scrollbar-none">
           <button onClick=${() => setFilterCat('all')}
             class="shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
               filterCat === 'all' ? 'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
