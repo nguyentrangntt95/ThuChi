@@ -603,7 +603,7 @@ function CategoryChart({ expenses }) {
             <div key=${d.id} class="flex items-center gap-1.5 text-xs">
               <span class="w-2 h-2 rounded-full shrink-0" style="background-color:${d.hex}"></span>
               <span class="text-zinc-600 dark:text-zinc-400 truncate">${d.emoji} ${d.name}</span>
-              <span class="ml-auto font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${fmtShort(d.total)}</span>
+              <span class="ml-auto font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${fmtShort(d.total)} <span class="text-zinc-400">${Math.round(d.total/grandTotal*100)}%</span></span>
             </div>
           `)}
         </div>
