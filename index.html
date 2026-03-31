@@ -1361,6 +1361,13 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [authChecked, setAuthChecked] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setShowScrollTop(window.scrollY > 400);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   // Verify token on app load
   useEffect(() => {
@@ -1653,7 +1660,13 @@ function App() {
         </div>
       </main>
 
-      <div class="fixed bottom-6 left-0 right-0 flex justify-center z-30">
+      <div class="fixed bottom-6 left-0 right-0 flex justify-center gap-3 z-30">
+        ${showScrollTop && html`
+          <button onClick=${() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            class="p-3 rounded-full bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800 shadow-lg transition-all active:scale-95 slide-up">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="18 15 12 9 6 15"/></svg>
+          </button>
+        `}
         <button onClick=${() => setModal('new')}
           class="px-5 py-3 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-medium shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all active:scale-95 flex items-center gap-2">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
