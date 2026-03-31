@@ -1217,29 +1217,55 @@ function ExportButton({ expenses }) {
 
 // ── Login Screen ──
 function LoginScreen({ onLogin }) {
+  const [mode, setMode] = useState('login'); // 'login' or 'signup'
   const [code, setCode] = useState('');
-  const handleLogin = () => {
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleSubmit = async () => {
     const trimmed = code.trim();
-    if (trimmed.length < 1) return;
-    onLogin(trimmed);
+    if (!trimmed || !password) { setError('Vui lòng nhập mã và mật khẩu'); return; }
+    setError('');
+    setLoading(true);
+    try {
+      const endpoint = mode === 'signup' ? '/api/signup' : '/api/login';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_code: trimmed, password })
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || 'Lỗi'); setLoading(false); return; }
+      onLogin(trimmed);
+    } catch (e) { setError('Lỗi kết nối'); }
+    setLoading(false);
   };
+
   return html`
     <div class="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-900 p-4">
       <div class="w-full max-w-md bg-white dark:bg-zinc-800 rounded-2xl p-8 shadow-lg text-center slide-up">
         <div class="text-5xl mb-4">💰</div>
         <h1 class="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-1">Thu Chi</h1>
-        <p class="text-sm text-zinc-500 dark:text-zinc-400 mb-6">Nhập mã của bạn để đồng bộ dữ liệu</p>
-        <input value=${code} onInput=${e => setCode(e.target.value)}
-          placeholder="VD: trang, gia-dinh, 2026..."
-          class="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-center text-lg font-medium placeholder:text-zinc-400 placeholder:text-base placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-emerald-500 mb-4"
-          onKeyDown=${e => e.key === 'Enter' && handleLogin()}
+        <p class="text-sm text-zinc-500 dark:text-zinc-400 mb-6">${mode === 'login' ? 'Đăng nhập tài khoản' : 'Tạo tài khoản mới'}</p>
+        <input value=${code} onInput=${e => { setCode(e.target.value); setError(''); }}
+          placeholder="Tên tài khoản"
+          class="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-center text-lg font-medium placeholder:text-zinc-400 placeholder:text-base placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-emerald-500 mb-3"
           autofocus />
-        <button onClick=${handleLogin}
+        <input type="password" value=${password} onInput=${e => { setPassword(e.target.value); setError(''); }}
+          placeholder="Mật khẩu"
+          class="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-center text-lg font-medium placeholder:text-zinc-400 placeholder:text-base placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-emerald-500 mb-4"
+          onKeyDown=${e => e.key === 'Enter' && handleSubmit()} />
+        ${error && html`<p class="text-xs text-red-500 mb-3">${error}</p>`}
+        <button onClick=${handleSubmit}
           class="w-full py-3 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition-colors active:scale-95 disabled:opacity-40 text-sm"
-          disabled=${!code.trim()}>
-          Đăng nhập
+          disabled=${!code.trim() || !password || loading}>
+          ${loading ? 'Đang xử lý...' : mode === 'login' ? 'Đăng nhập' : 'Đăng ký'}
         </button>
-        <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-4">Cùng mã = cùng dữ liệu trên mọi thiết bị</p>
+        <p class="text-sm text-zinc-400 dark:text-zinc-500 mt-4">
+          ${mode === 'login' ? html`Chưa có tài khoản? <button onClick=${() => { setMode('signup'); setError(''); }} class="text-emerald-600 dark:text-emerald-400 font-medium">Đăng ký</button>` :
+            html`Đã có tài khoản? <button onClick=${() => { setMode('login'); setError(''); }} class="text-emerald-600 dark:text-emerald-400 font-medium">Đăng nhập</button>`}
+        </p>
       </div>
     </div>
   `;

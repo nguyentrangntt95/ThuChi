@@ -51,6 +51,13 @@ def init_db():
             PRIMARY KEY (month, user_code)
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_code TEXT PRIMARY KEY,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
     # Add user_code column if not exists (migration for existing data)
     try:
         cur.execute("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS user_code TEXT DEFAULT 'default'")
@@ -327,6 +334,47 @@ def set_budget():
     conn.close()
     notify_clients(user_code)
     return jsonify({"ok": True})
+
+@app.route("/api/signup", methods=["POST"])
+def signup():
+    data = request.json
+    user_code = (data.get("user_code") or "").strip()
+    password = (data.get("password") or "").strip()
+    if not user_code or not password:
+        return jsonify({"error": "Vui lòng nhập mã và mật khẩu"}), 400
+    if len(user_code) < 1 or len(password) < 3:
+        return jsonify({"error": "Mật khẩu ít nhất 3 ký tự"}), 400
+    pw_hash = hashlib.sha256(password.encode()).hexdigest()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_code FROM users WHERE user_code=%s", (user_code,))
+    if cur.fetchone():
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Mã này đã được đăng ký"}), 409
+    cur.execute("INSERT INTO users (user_code, password_hash) VALUES (%s, %s)", (user_code, pw_hash))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True}), 201
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    data = request.json
+    user_code = (data.get("user_code") or "").strip()
+    password = (data.get("password") or "").strip()
+    if not user_code or not password:
+        return jsonify({"error": "Vui lòng nhập mã và mật khẩu"}), 400
+    pw_hash = hashlib.sha256(password.encode()).hexdigest()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_code FROM users WHERE user_code=%s AND password_hash=%s", (user_code, pw_hash))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not user:
+        return jsonify({"error": "Sai mã hoặc mật khẩu"}), 401
+    return jsonify({"ok": True, "user_code": user_code})
 
 @app.route("/api/migrate-user", methods=["POST"])
 def migrate_user():
