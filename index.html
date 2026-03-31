@@ -503,27 +503,41 @@ function BudgetBar({ total, budget, onSetBudget, month }) {
 }
 
 function PieChart({ data, grandTotal }) {
-  const size = 140, cx = size/2, cy = size/2, r = 55;
+  const [active, setActive] = useState(-1);
+  const size = 160, cx = size/2, cy = size/2, r = 55;
   let cumAngle = -Math.PI / 2;
-  const slices = data.map(d => {
+  const slices = data.map((d, i) => {
     const angle = (d.total / grandTotal) * Math.PI * 2;
     const startAngle = cumAngle;
     cumAngle += angle;
     const endAngle = cumAngle;
+    const midAngle = (startAngle + endAngle) / 2;
     const largeArc = angle > Math.PI ? 1 : 0;
     const x1 = cx + r * Math.cos(startAngle), y1 = cy + r * Math.sin(startAngle);
     const x2 = cx + r * Math.cos(endAngle), y2 = cy + r * Math.sin(endAngle);
     const path = data.length === 1
       ? 'M '+cx+' '+(cy-r)+' A '+r+' '+r+' 0 1 1 '+(cx-0.001)+' '+(cy-r)+' Z'
       : 'M '+cx+' '+cy+' L '+x1+' '+y1+' A '+r+' '+r+' 0 '+largeArc+' 1 '+x2+' '+y2+' Z';
-    return { ...d, path };
+    const tipX = cx + (r * 0.65) * Math.cos(midAngle);
+    const tipY = cy + (r * 0.65) * Math.sin(midAngle);
+    return { ...d, path, tipX, tipY, idx: i };
   });
+  const act = active >= 0 && active < slices.length ? slices[active] : null;
   return html`
-    <svg width=${size} height=${size} viewBox="0 0 ${size} ${size}">
-      ${slices.map(s => html`<path key=${s.id} d=${s.path} fill=${s.hex} opacity="0.85" />`)}
+    <svg width=${size} height=${size} viewBox="0 0 ${size} ${size}" onMouseLeave=${() => setActive(-1)}>
+      ${slices.map(s => html`
+        <path key=${s.id} d=${s.path} fill=${s.hex} opacity=${active === s.idx ? '1' : '0.8'}
+          style="cursor:pointer;transition:opacity 0.15s"
+          onMouseEnter=${() => setActive(s.idx)} onClick=${() => setActive(active === s.idx ? -1 : s.idx)} />
+      `)}
       <circle cx=${cx} cy=${cy} r="30" class="fill-white dark:fill-zinc-800" />
-      <text x=${cx} y=${cy-4} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200 text-[11px] font-bold">${fmt(grandTotal)}</text>
-      <text x=${cx} y=${cy+10} text-anchor="middle" class="fill-zinc-400 text-[8px]">VNĐ</text>
+      ${act ? html`
+        <text x=${cx} y=${cy-6} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200" style="font-size:9px;font-weight:700">${fmt(act.total)}đ</text>
+        <text x=${cx} y=${cy+6} text-anchor="middle" style="font-size:8px;font-weight:600" fill=${act.hex}>${act.emoji} ${Math.round(act.total/grandTotal*100)}%</text>
+      ` : html`
+        <text x=${cx} y=${cy-4} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200 text-[11px] font-bold">${fmt(grandTotal)}</text>
+        <text x=${cx} y=${cy+10} text-anchor="middle" class="fill-zinc-400 text-[8px]">VNĐ</text>
+      `}
     </svg>
   `;
 }
@@ -550,7 +564,7 @@ function CategoryChart({ expenses }) {
             <div key=${d.id} class="flex items-center gap-2 text-xs">
               <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:${d.hex}"></span>
               <span class="text-zinc-600 dark:text-zinc-400 truncate">${d.emoji} ${d.name}</span>
-              <span class="ml-auto font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${Math.round(d.total/grandTotal*100)}%</span>
+              <span class="ml-auto font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${fmt(d.total)}đ <span class="text-zinc-400">${Math.round(d.total/grandTotal*100)}%</span></span>
             </div>
           `)}
         </div>
@@ -657,6 +671,7 @@ function MonthlyComparisonChart({ expenses, budgets }) {
 }
 
 function CategoryTrendChart({ expenses }) {
+  const [active, setActive] = useState(-1);
   const data = useMemo(() => {
     const byMonthCat = {};
     expenses.forEach(e => {
@@ -680,20 +695,26 @@ function CategoryTrendChart({ expenses }) {
   return html`
     <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
       <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">Xu hướng danh mục</h3>
-      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" onMouseLeave=${() => setActive(-1)}>
         ${data.map((d, i) => {
           const x = pad + i * ((W - pad) / data.length) + ((W - pad) / data.length - barW) / 2;
           const totalH = max > 0 ? (d.total / max) * (H - pad*2) : 0;
           let yOff = H - pad;
           const monthNum = parseInt(d.month.slice(5));
+          const isActive = active === i;
+          const topY = H - pad - totalH;
           return html`
-            <g key=${d.month}>
+            <g key=${d.month} onMouseEnter=${() => setActive(i)} onClick=${() => setActive(active === i ? -1 : i)} style="cursor:pointer">
               ${d.cats.filter(c => c.total > 0).map(c => {
                 const segH = max > 0 ? (c.total / max) * (H - pad*2) : 0;
                 yOff -= segH;
-                return html`<rect key=${c.id} x=${x} y=${yOff} width=${barW} height=${segH} fill=${c.hex} opacity="0.85" />`;
+                return html`<rect key=${c.id} x=${x} y=${yOff} width=${barW} height=${segH} fill=${c.hex} opacity=${isActive ? '1' : '0.8'} />`;
               })}
               <text x=${x + barW/2} y=${H - pad + 12} text-anchor="middle" class="fill-zinc-400" style="font-size:8px">${monthNames[monthNum]}</text>
+              ${isActive && html`
+                <rect x=${x + barW/2 - 28} y=${topY - 18} width="56" height="16" rx="4" fill="#18181b" opacity="0.9" />
+                <text x=${x + barW/2} y=${topY - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmt(d.total)}đ</text>
+              `}
             </g>
           `;
         })}
@@ -1424,7 +1445,7 @@ function App() {
             class="shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
               filterCat === 'all' ? 'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
             }">Tất cả</button>
-          ${CATEGORIES.map(c => html`
+          ${[...CATEGORIES].sort((a, b) => (catTotals[b.id] || 0) - (catTotals[a.id] || 0)).map(c => html`
             <button key=${c.id} onClick=${() => setFilterCat(filterCat === c.id ? 'all' : c.id)}
               class="shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                 filterCat === c.id ? 'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
