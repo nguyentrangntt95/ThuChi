@@ -854,8 +854,8 @@ function WeekdayChart({ expenses }) {
 }
 
 function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit }) {
-  const [expanded, setExpanded] = useState(() => load('tc-dash', false));
-  useEffect(() => { save('tc-dash', expanded); }, [expanded]);
+  const [expanded, setExpanded] = useState(() => load('tc-insights', false));
+  useEffect(() => { save('tc-insights', expanded); }, [expanded]);
 
   return html`
     <div>
