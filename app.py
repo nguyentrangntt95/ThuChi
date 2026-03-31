@@ -376,6 +376,26 @@ def login():
         return jsonify({"error": "Sai mã hoặc mật khẩu"}), 401
     return jsonify({"ok": True, "user_code": user_code})
 
+@app.route("/api/reset-password", methods=["POST"])
+def reset_password():
+    data = request.json
+    user_code = (data.get("user_code") or "").strip()
+    new_password = (data.get("new_password") or "").strip()
+    admin_key = (data.get("admin_key") or "").strip()
+    if admin_key != os.environ.get("ADMIN_KEY", "thuchi-admin-2026"):
+        return jsonify({"error": "Unauthorized"}), 403
+    if not user_code or not new_password:
+        return jsonify({"error": "Missing fields"}), 400
+    pw_hash = hashlib.sha256(new_password.encode()).hexdigest()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET password_hash=%s WHERE user_code=%s", (pw_hash, user_code))
+    updated = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "updated": updated})
+
 @app.route("/api/migrate-user", methods=["POST"])
 def migrate_user():
     """Move all data from one user_code to another"""
