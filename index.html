@@ -222,13 +222,17 @@ const html = htm.bind(h);
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const getUserCode = () => load('tc-user', '');
-const setUserCode = (code) => save('tc-user', code);
+const getToken = () => load('tc-token', '');
+const getStoredUser = () => load('tc-user', '');
+const authHeaders = () => {
+  const token = getToken();
+  const h = { 'Content-Type': 'application/json' };
+  if (token) h['Authorization'] = 'Bearer ' + token;
+  return h;
+};
 const apiCall = async (path, opts) => {
-  const uc = getUserCode();
-  const headers = { 'Content-Type': 'application/json' };
-  if (uc) headers['X-User-Code'] = uc;
-  const res = await fetch(path, { headers, ...opts });
+  const res = await fetch(path, { headers: authHeaders(), ...opts });
+  if (res.status === 401) { save('tc-token', ''); save('tc-user', ''); location.reload(); return {}; }
   return res.json();
 };
 const fmt = (n) => new Intl.NumberFormat('vi-VN').format(n);
@@ -244,9 +248,9 @@ const monthOf = (d) => d.slice(0, 7);
 async function scanImage(file) {
   const formData = new FormData();
   formData.append('image', file);
-  const uc = getUserCode();
+  const token = getToken();
   const headers = {};
-  if (uc) headers['X-User-Code'] = uc;
+  if (token) headers['Authorization'] = 'Bearer ' + token;
   const res = await fetch('/api/scan', { method: 'POST', body: formData, headers });
   const data = await res.json();
   return data.items || [];
@@ -938,7 +942,7 @@ function ExpenseRow({ expense, onEdit, onDelete }) {
           <p class="text-xs text-zinc-400">${cat.name} \u00B7 ${expense.date.slice(8)}/${expense.date.slice(5,7)}</p>
         </div>
         <div class="text-right shrink-0">
-          <p class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">-${fmtShort(expense.amount)}</p>
+          <p class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">-${fmt(expense.amount)}đ</p>
         </div>
         ${!isMobile && html`
           <button onClick=${(e) => { e.stopPropagation(); onDelete(expense.id); }}
@@ -1243,7 +1247,9 @@ function LoginScreen({ onLogin }) {
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Lỗi'); setLoading(false); return; }
-      onLogin(trimmed);
+      save('tc-token', data.token);
+      save('tc-user', data.user_code);
+      onLogin(data.user_code);
     } catch (e) { setError('Lỗi kết nối'); }
     setLoading(false);
   };
@@ -1289,7 +1295,7 @@ function LoginScreen({ onLogin }) {
 
 // ── App ──
 function App() {
-  const [userCode, setUC] = useState(() => getUserCode());
+  const [userCode, setUC] = useState(() => getStoredUser());
   const [dark, setDark] = useState(() => load('tc-dark', false));
   const [expenses, setExpenses] = useState([]);
   const [budgets, setBudgets] = useState({});
@@ -1300,10 +1306,24 @@ function App() {
   const [showQR, setShowQR] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // Verify token on app load
+  useEffect(() => {
+    const token = getToken();
+    if (!token) { setAuthChecked(true); return; }
+    fetch('/api/verify', { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) { setUC(d.user_code); save('tc-user', d.user_code); }
+        else { save('tc-token', ''); save('tc-user', ''); setUC(''); }
+      })
+      .catch(() => {})
+      .finally(() => setAuthChecked(true));
+  }, []);
 
   const handleLogin = (code) => {
-    setUserCode(code);
-    save('tc-user', code);
+    setUC(code);
     setExpenses([]);
     setBudgets({});
     setLoading(true);
@@ -1311,12 +1331,19 @@ function App() {
 
   const handleLogout = () => {
     setUC('');
+    save('tc-token', '');
     save('tc-user', '');
     setExpenses([]);
     setBudgets({});
   };
 
-  if (!userCode) {
+  if (!authChecked) {
+    return html`<div class="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
+      <div class="text-center"><div class="text-5xl mb-4">💰</div><p class="text-zinc-400 text-sm">Đang kiểm tra...</p></div>
+    </div>`;
+  }
+
+  if (!userCode || !getToken()) {
     return html`<${LoginScreen} onLogin=${handleLogin} />`;
   }
 
@@ -1341,8 +1368,9 @@ function App() {
   useEffect(() => {
     let es;
     const connect = () => {
-      const uc = getUserCode();
-      es = new EventSource('/api/events' + (uc ? '?user=' + encodeURIComponent(uc) : ''));
+      const token = getToken();
+      if (!token) return;
+      es = new EventSource('/api/events?token=' + encodeURIComponent(token));
       es.onmessage = () => fetchData();
       es.onerror = () => { es.close(); setTimeout(connect, 3000); };
     };
@@ -1515,7 +1543,7 @@ function App() {
             <div key=${date} class="mb-4">
               <div class="flex items-center justify-between mb-1 sticky top-[57px] bg-zinc-50 dark:bg-zinc-900 py-1 z-10">
                 <span class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase">${formatDateLabel(date)}</span>
-                <span class="text-xs text-zinc-400">${fmtShort(items.reduce((s,e) => s+e.amount, 0))}</span>
+                <span class="text-xs text-zinc-400">${fmt(items.reduce((s,e) => s+e.amount, 0))}đ</span>
               </div>
               <div class="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 px-3">
                 ${items.map(e => html`<${ExpenseRow} key=${e.id} expense=${e} onEdit=${() => setModal(e)} onDelete=${deleteExpense} />`)}

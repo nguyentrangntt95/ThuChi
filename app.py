@@ -5,11 +5,13 @@ import time
 import queue
 import base64
 import hashlib
+import secrets
 import psycopg2
 import requests as http_requests
 from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, send_file, Response
 from datetime import date
+from functools import wraps
 
 app = Flask(__name__)
 
@@ -55,15 +57,16 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             user_code TEXT PRIMARY KEY,
             password_hash TEXT NOT NULL,
+            token TEXT,
             created_at TIMESTAMP DEFAULT NOW()
         )
     """)
-    # Add user_code column if not exists (migration for existing data)
+    # Add columns if not exists (migration)
     try:
         cur.execute("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS user_code TEXT DEFAULT 'default'")
         cur.execute("ALTER TABLE budgets DROP CONSTRAINT IF EXISTS budgets_pkey")
         cur.execute("ALTER TABLE budgets ADD COLUMN IF NOT EXISTS user_code TEXT DEFAULT 'default'")
-        # Recreate primary key
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS token TEXT")
         cur.execute("""
             DO $$ BEGIN
                 IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'budgets_pkey_new') THEN
@@ -78,9 +81,42 @@ def init_db():
     cur.close()
     conn.close()
 
+# ── Auth helpers ──
+
+def generate_token():
+    return secrets.token_hex(32)
+
+def get_authenticated_user():
+    """Verify token from Authorization header or query param, return user_code or None"""
+    auth = request.headers.get('Authorization', '')
+    if auth.startswith('Bearer '):
+        token = auth[7:]
+    else:
+        token = request.args.get('token', '')
+    if not token:
+        return None
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_code FROM users WHERE token=%s", (token,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return row['user_code'] if row else None
+
+def require_auth(f):
+    """Decorator: require valid token, inject user_code"""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        user_code = get_authenticated_user()
+        if not user_code:
+            return jsonify({"error": "Unauthorized"}), 401
+        request._user_code = user_code
+        return f(*args, **kwargs)
+    return decorated
+
 def get_user_code():
-    """Extract user_code from request header or query param"""
-    return request.headers.get('X-User-Code', request.args.get('user', 'default'))
+    """Get user_code from authenticated request"""
+    return getattr(request, '_user_code', 'default')
 
 # ── AI Receipt Scanner ──
 
@@ -113,17 +149,9 @@ CHỈ trả về JSON array, KHÔNG có text nào khác:
 
 Nếu không đọc được gì hữu ích, trả về: []"""
 
-# Exchange rates to VND (approximate, updated periodically)
 EXCHANGE_RATES = {
-    'USD': 25500,
-    'EUR': 27500,
-    'GBP': 32000,
-    'JPY': 170,
-    'KRW': 19,
-    'THB': 720,
-    'SGD': 19000,
-    'AUD': 16500,
-    'CNY': 3500,
+    'USD': 25500, 'EUR': 27500, 'GBP': 32000, 'JPY': 170,
+    'KRW': 19, 'THB': 720, 'SGD': 19000, 'AUD': 16500, 'CNY': 3500,
 }
 
 def scan_with_groq(image_bytes, content_type):
@@ -137,15 +165,11 @@ def scan_with_groq(image_bytes, content_type):
 
     payload = {
         "model": "meta-llama/llama-4-scout-17b-16e-instruct",
-        "messages": [{
-            "role": "user",
-            "content": [
-                {"type": "image_url", "image_url": {"url": f"data:{content_type};base64,{b64}"}},
-                {"type": "text", "text": prompt}
-            ]
-        }],
-        "temperature": 0.1,
-        "max_tokens": 2000
+        "messages": [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:{content_type};base64,{b64}"}},
+            {"type": "text", "text": prompt}
+        ]}],
+        "temperature": 0.1, "max_tokens": 2000
     }
 
     resp = http_requests.post(url, json=payload, headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
@@ -153,7 +177,6 @@ def scan_with_groq(image_bytes, content_type):
     data = resp.json()
 
     text = data["choices"][0]["message"]["content"].strip()
-    # Extract JSON
     if text.startswith("```"):
         text = re.sub(r'^```\w*\n?', '', text)
         text = re.sub(r'\n?```$', '', text)
@@ -171,15 +194,12 @@ def scan_with_groq(image_bytes, content_type):
         amt = int(item.get('amount', 0))
         if amt <= 0:
             continue
-
-        # Auto-convert foreign currency to VND
         currency = item.get('currency', 'VND').upper().strip()
         detail = item.get('detail', '')[:80]
         if currency != 'VND' and currency in EXCHANGE_RATES:
             original_amt = amt
             amt = int(amt * EXCHANGE_RATES[currency])
             detail = f"{detail} ({original_amt} {currency})"
-
         result.append({
             'date': item.get('date', today_str),
             'category': cat,
@@ -188,7 +208,92 @@ def scan_with_groq(image_bytes, content_type):
         })
     return result
 
+# ── Public routes (no auth) ──
+
+@app.route("/")
+def index():
+    return send_file("index.html")
+
+@app.route("/api/signup", methods=["POST"])
+def signup():
+    data = request.json
+    user_code = (data.get("user_code") or "").strip()
+    password = (data.get("password") or "").strip()
+    if not user_code or not password:
+        return jsonify({"error": "Vui lòng nhập mã và mật khẩu"}), 400
+    if len(password) < 3:
+        return jsonify({"error": "Mật khẩu ít nhất 3 ký tự"}), 400
+    pw_hash = hashlib.sha256(password.encode()).hexdigest()
+    token = generate_token()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_code FROM users WHERE user_code=%s", (user_code,))
+    if cur.fetchone():
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Mã này đã được đăng ký"}), 409
+    cur.execute("INSERT INTO users (user_code, password_hash, token) VALUES (%s, %s, %s)", (user_code, pw_hash, token))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "token": token, "user_code": user_code}), 201
+
+@app.route("/api/login", methods=["POST"])
+def login():
+    data = request.json
+    user_code = (data.get("user_code") or "").strip()
+    password = (data.get("password") or "").strip()
+    if not user_code or not password:
+        return jsonify({"error": "Vui lòng nhập mã và mật khẩu"}), 400
+    pw_hash = hashlib.sha256(password.encode()).hexdigest()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT user_code FROM users WHERE user_code=%s AND password_hash=%s", (user_code, pw_hash))
+    user = cur.fetchone()
+    if not user:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "Sai mã hoặc mật khẩu"}), 401
+    # Generate new token on each login
+    token = generate_token()
+    cur.execute("UPDATE users SET token=%s WHERE user_code=%s", (token, user_code))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "token": token, "user_code": user_code})
+
+@app.route("/api/verify", methods=["POST"])
+def verify_token():
+    """Verify if stored token is still valid"""
+    user_code = get_authenticated_user()
+    if not user_code:
+        return jsonify({"ok": False}), 401
+    return jsonify({"ok": True, "user_code": user_code})
+
+@app.route("/api/reset-password", methods=["POST"])
+def reset_password():
+    data = request.json
+    admin_key = (data.get("admin_key") or "").strip()
+    if admin_key != os.environ.get("ADMIN_KEY", "thuchi-admin-2026"):
+        return jsonify({"error": "Unauthorized"}), 403
+    user_code = (data.get("user_code") or "").strip()
+    new_password = (data.get("new_password") or "").strip()
+    if not user_code or not new_password:
+        return jsonify({"error": "Missing fields"}), 400
+    pw_hash = hashlib.sha256(new_password.encode()).hexdigest()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET password_hash=%s WHERE user_code=%s", (pw_hash, user_code))
+    updated = cur.rowcount
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "updated": updated})
+
+# ── Protected routes (require auth) ──
+
 @app.route("/api/scan", methods=["POST"])
+@require_auth
 def scan_receipt():
     if 'image' not in request.files:
         return jsonify({"error": "No image"}), 400
@@ -201,8 +306,8 @@ def scan_receipt():
     except Exception as e:
         return jsonify({"error": str(e), "items": []}), 500
 
-# SSE
 @app.route("/api/events")
+@require_auth
 def events():
     user_code = get_user_code()
     def stream():
@@ -225,13 +330,8 @@ def events():
         "X-Accel-Buffering": "no",
     })
 
-@app.route("/")
-def index():
-    return send_file("index.html")
-
-# ── Expenses API ──
-
 @app.route("/api/expenses")
+@require_auth
 def list_expenses():
     user_code = get_user_code()
     conn = get_db()
@@ -243,6 +343,7 @@ def list_expenses():
     return jsonify(rows)
 
 @app.route("/api/expenses", methods=["POST"])
+@require_auth
 def add_expense():
     data = request.json
     user_code = get_user_code()
@@ -259,6 +360,7 @@ def add_expense():
     return jsonify({"ok": True}), 201
 
 @app.route("/api/expenses/bulk", methods=["POST"])
+@require_auth
 def add_expenses_bulk():
     items = request.json.get("items", [])
     if not items:
@@ -278,6 +380,7 @@ def add_expenses_bulk():
     return jsonify({"ok": True, "count": len(items)}), 201
 
 @app.route("/api/expenses/<eid>", methods=["PUT"])
+@require_auth
 def update_expense(eid):
     data = request.json
     user_code = get_user_code()
@@ -294,6 +397,7 @@ def update_expense(eid):
     return jsonify({"ok": True})
 
 @app.route("/api/expenses/<eid>", methods=["DELETE"])
+@require_auth
 def delete_expense(eid):
     user_code = get_user_code()
     conn = get_db()
@@ -305,9 +409,8 @@ def delete_expense(eid):
     notify_clients(user_code)
     return jsonify({"ok": True})
 
-# ── Budgets API ──
-
 @app.route("/api/budgets")
+@require_auth
 def list_budgets():
     user_code = get_user_code()
     conn = get_db()
@@ -319,6 +422,7 @@ def list_budgets():
     return jsonify({r["month"]: r["amount"] for r in rows})
 
 @app.route("/api/budgets", methods=["POST"])
+@require_auth
 def set_budget():
     data = request.json
     user_code = get_user_code()
@@ -334,85 +438,6 @@ def set_budget():
     conn.close()
     notify_clients(user_code)
     return jsonify({"ok": True})
-
-@app.route("/api/signup", methods=["POST"])
-def signup():
-    data = request.json
-    user_code = (data.get("user_code") or "").strip()
-    password = (data.get("password") or "").strip()
-    if not user_code or not password:
-        return jsonify({"error": "Vui lòng nhập mã và mật khẩu"}), 400
-    if len(user_code) < 1 or len(password) < 3:
-        return jsonify({"error": "Mật khẩu ít nhất 3 ký tự"}), 400
-    pw_hash = hashlib.sha256(password.encode()).hexdigest()
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT user_code FROM users WHERE user_code=%s", (user_code,))
-    if cur.fetchone():
-        cur.close()
-        conn.close()
-        return jsonify({"error": "Mã này đã được đăng ký"}), 409
-    cur.execute("INSERT INTO users (user_code, password_hash) VALUES (%s, %s)", (user_code, pw_hash))
-    conn.commit()
-    cur.close()
-    conn.close()
-    return jsonify({"ok": True}), 201
-
-@app.route("/api/login", methods=["POST"])
-def login():
-    data = request.json
-    user_code = (data.get("user_code") or "").strip()
-    password = (data.get("password") or "").strip()
-    if not user_code or not password:
-        return jsonify({"error": "Vui lòng nhập mã và mật khẩu"}), 400
-    pw_hash = hashlib.sha256(password.encode()).hexdigest()
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("SELECT user_code FROM users WHERE user_code=%s AND password_hash=%s", (user_code, pw_hash))
-    user = cur.fetchone()
-    cur.close()
-    conn.close()
-    if not user:
-        return jsonify({"error": "Sai mã hoặc mật khẩu"}), 401
-    return jsonify({"ok": True, "user_code": user_code})
-
-@app.route("/api/reset-password", methods=["POST"])
-def reset_password():
-    data = request.json
-    user_code = (data.get("user_code") or "").strip()
-    new_password = (data.get("new_password") or "").strip()
-    admin_key = (data.get("admin_key") or "").strip()
-    if admin_key != os.environ.get("ADMIN_KEY", "thuchi-admin-2026"):
-        return jsonify({"error": "Unauthorized"}), 403
-    if not user_code or not new_password:
-        return jsonify({"error": "Missing fields"}), 400
-    pw_hash = hashlib.sha256(new_password.encode()).hexdigest()
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("UPDATE users SET password_hash=%s WHERE user_code=%s", (pw_hash, user_code))
-    updated = cur.rowcount
-    conn.commit()
-    cur.close()
-    conn.close()
-    return jsonify({"ok": True, "updated": updated})
-
-@app.route("/api/migrate-user", methods=["POST"])
-def migrate_user():
-    """Move all data from one user_code to another"""
-    data = request.json
-    old_code = data.get("old", "").strip()
-    new_code = data.get("new", "").strip()
-    if not old_code or not new_code or old_code == new_code:
-        return jsonify({"error": "Invalid codes"}), 400
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("UPDATE expenses SET user_code=%s WHERE user_code=%s", (new_code, old_code))
-    cur.execute("UPDATE budgets SET user_code=%s WHERE user_code=%s", (new_code, old_code))
-    conn.commit()
-    moved_expenses = cur.rowcount
-    cur.close()
-    conn.close()
-    return jsonify({"ok": True, "moved": moved_expenses})
 
 if __name__ == "__main__":
     init_db()
