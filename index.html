@@ -222,7 +222,7 @@ const html = htm.bind(h);
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const getUserCode = () => load('tc-user', '');
+const getUserCode = () => load('tc-user', 'default');
 const setUserCode = (code) => save('tc-user', code);
 const apiCall = async (path, opts) => {
   const uc = getUserCode();
@@ -1246,15 +1246,14 @@ function App() {
     setLoading(true);
   };
 
+  const [showLogin, setShowLogin] = useState(false);
+
   const handleLogout = () => {
-    setUserCode('');
-    save('tc-user', '');
-    setExpenses([]);
-    setBudgets({});
+    setShowLogin(true);
   };
 
-  if (!userCode) {
-    return html`<${LoginScreen} onLogin=${handleLogin} />`;
+  if (showLogin) {
+    return html`<${LoginScreen} onLogin=${(code) => { handleLogin(code); setShowLogin(false); }} />`;
   }
 
   const fetchData = useCallback(async () => {
