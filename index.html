@@ -488,13 +488,15 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
   `;
 }
 
-function BudgetBar({ total, budget, onSetBudget, month, dark }) {
+function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark }) {
+  const budget = rawBudget || 15000000;
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState('');
   const pct = budget > 0 ? Math.min((total / budget) * 100, 100) : 0;
   const over = budget > 0 && total > budget;
   const warn = budget > 0 && total > budget * 0.8 && !over;
   const remain = budget > 0 ? budget - total : 0;
+  const monthLabel = month.slice(0, 4) === new Date().getFullYear().toString() ? 'T' + parseInt(month.slice(5)) : month;
 
   const handleSave = () => {
     const n = parseInt(val.replace(/\D/g, ''));
@@ -518,30 +520,22 @@ function BudgetBar({ total, budget, onSetBudget, month, dark }) {
         <div class="flex items-center gap-3">
           <div class="flex-1 min-w-0">
             <div class="flex items-baseline gap-1.5">
+              <span class="text-xs font-medium px-1.5 py-0.5 rounded" style="background:${dark ? '#334155' : '#f4f4f5'};color:${dark ? '#94a3b8' : '#71717a'}">${monthLabel}</span>
               <span class="text-xl font-bold tracking-tight" style="color:${over ? '#ef4444' : dark ? '#f1f5f9' : '#18181b'}">${fmtShort(total)}</span>
-              ${budget > 0 && html`<span class="text-xs" style="color:${dark ? '#64748b' : '#a1a1aa'}">/ ${fmtShort(budget)}</span>`}
+              <span class="text-xs" style="color:${dark ? '#64748b' : '#a1a1aa'}">/ ${fmtShort(budget)}</span>
             </div>
-            ${budget > 0 && html`
-              <div class="h-1.5 rounded-full overflow-hidden mt-1.5" style="background:${dark ? '#334155' : '#f4f4f5'}">
-                <div class="h-full rounded-full transition-all duration-500"
-                  style="width:${pct}%;background:${over ? '#ef4444' : warn ? '#f59e0b' : '#10b981'}" />
-              </div>
-            `}
+            <div class="h-1.5 rounded-full overflow-hidden mt-1.5" style="background:${dark ? '#334155' : '#f4f4f5'}">
+              <div class="h-full rounded-full transition-all duration-500"
+                style="width:${pct}%;background:${over ? '#ef4444' : warn ? '#f59e0b' : '#10b981'}" />
+            </div>
           </div>
-          ${budget > 0 ? html`
-            <div class="text-right shrink-0">
-              <span class="text-sm font-bold" style="color:${over ? '#ef4444' : '#10b981'}">${over ? 'Vượt ' + fmtShort(total - budget) : 'Còn ' + fmtShort(remain)}</span>
-            </div>
-          ` : html`
-            <button onClick=${() => { setVal(''); setEditing(true); }}
-              class="shrink-0 text-xs px-2.5 py-1 rounded-lg" style="background:${dark ? '#064e3b' : '#ecfdf5'};color:${dark ? '#34d399' : '#059669'}">+ Ngân sách</button>
-          `}
-          ${budget > 0 && html`
-            <button onClick=${() => { setVal(budget.toString()); setEditing(true); }}
-              class="shrink-0 p-1 rounded-lg" style="color:${dark ? '#64748b' : '#a1a1aa'}">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-            </button>
-          `}
+          <div class="text-right shrink-0">
+            <span class="text-sm font-bold" style="color:${over ? '#ef4444' : '#10b981'}">${over ? 'Vượt ' + fmtShort(total - budget) : 'Còn ' + fmtShort(remain)}</span>
+          </div>
+          <button onClick=${() => { setVal(rawBudget > 0 ? rawBudget.toString() : ''); setEditing(true); }}
+            class="shrink-0 p-1 rounded-lg" style="color:${dark ? '#64748b' : '#a1a1aa'}">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
         </div>
       `}
     </div>
@@ -888,6 +882,7 @@ function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit }) {
       </div>
       ${expanded && html`
         <div class="fade-in">
+          <${CategoryChart} expenses=${rangeExpenses} />
           <${DailySpendingChart} expenses=${rangeExpenses} />
           <${MonthlyComparisonChart} expenses=${allExpenses} budgets=${budgets} />
           <${CategoryTrendChart} expenses=${allExpenses} />
@@ -1433,13 +1428,20 @@ function App() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [expData, budData] = await Promise.all([
+      const [expData, budData, catPatterns] = await Promise.all([
         apiCall('/api/expenses'),
-        apiCall('/api/budgets')
+        apiCall('/api/budgets'),
+        apiCall('/api/category-patterns')
       ]);
       setExpenses(expData);
       setBudgets(budData);
-      // Learn category patterns from existing expenses
+      // Learn from server-side AI patterns (high priority)
+      if (catPatterns && typeof catPatterns === 'object') {
+        for (const [detail, cat] of Object.entries(catPatterns)) {
+          catMemory.learn(detail, cat);
+        }
+      }
+      // Also learn from raw expense data
       catMemory.learnBulk(expData);
     } catch (e) {
       console.error('Failed to fetch:', e);
@@ -1625,7 +1627,6 @@ function App() {
             })}
           </div>
         `}
-        <${CategoryChart} expenses=${rangeExpenses} />
         <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} />
 
         <div class="px-4 mt-2">

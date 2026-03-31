@@ -159,7 +159,33 @@ EXCHANGE_RATES = {
     'KRW': 19, 'THB': 720, 'SGD': 19000, 'AUD': 16500, 'CNY': 3500,
 }
 
-def scan_with_groq(image_bytes, content_type):
+def get_user_category_patterns(user_code):
+    """Get user's most common detail→category mappings from their expense history"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT detail, category, COUNT(*) as cnt
+            FROM expenses
+            WHERE user_code=%s AND detail != '' AND category != 'other'
+            GROUP BY detail, category
+            ORDER BY cnt DESC
+            LIMIT 50
+        """, (user_code,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        # Deduplicate: keep the most frequent category per detail
+        patterns = {}
+        for r in rows:
+            d = r['detail'].strip()
+            if d and d not in patterns:
+                patterns[d] = r['category']
+        return patterns
+    except:
+        return {}
+
+def scan_with_groq(image_bytes, content_type, user_code=None):
     api_key = os.environ.get("GROQ_API_KEY", "")
     url = "https://api.groq.com/openai/v1/chat/completions"
 
@@ -167,6 +193,13 @@ def scan_with_groq(image_bytes, content_type):
     today_str = date.today().isoformat()
     year = date.today().year
     prompt = SCAN_PROMPT.format(today=today_str, year=year)
+
+    # Add user's learned category patterns
+    if user_code:
+        patterns = get_user_category_patterns(user_code)
+        if patterns:
+            lines = [f'  "{d}" → {c}' for d, c in list(patterns.items())[:30]]
+            prompt += "\n\nQUY TẮC TỪ LỊCH SỬ NGƯỜI DÙNG (ƯU TIÊN CAO NHẤT):\n" + "\n".join(lines)
 
     payload = {
         "model": "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -301,6 +334,14 @@ def reset_password():
 
 # ── Protected routes (require auth) ──
 
+@app.route("/api/category-patterns")
+@require_auth
+def category_patterns():
+    """Return user's learned category patterns from expense history"""
+    user_code = get_user_code()
+    patterns = get_user_category_patterns(user_code)
+    return jsonify(patterns)
+
 @app.route("/api/scan", methods=["POST"])
 @require_auth
 def scan_receipt():
@@ -310,7 +351,7 @@ def scan_receipt():
     image_bytes = file.read()
     content_type = file.content_type or 'image/jpeg'
     try:
-        items = scan_with_groq(image_bytes, content_type)
+        items = scan_with_groq(image_bytes, content_type, user_code=get_user_code())
         return jsonify({"items": items})
     except Exception as e:
         return jsonify({"error": str(e), "items": []}), 500
