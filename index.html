@@ -987,7 +987,7 @@ function ExpenseRow({ expense, onEdit, onDelete }) {
   `;
 }
 
-function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses }) {
+function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark }) {
   const [date, setDate] = useState(expense?.date || today());
   const [category, setCategory] = useState(expense?.category || 'food');
   const [detail, setDetail] = useState(expense?.detail || '');
@@ -1039,14 +1039,9 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses }) {
         if (mem && it.category === 'other') it.category = mem.cat;
         return it;
       });
-      if (enhanced.length > 1) {
+      if (enhanced.length >= 1) {
+        // Always use scan results view so user can confirm (especially for foreign currency)
         setScanResults(enhanced.map(it => ({ ...it, _id: uid() })));
-      } else if (enhanced.length === 1) {
-        const item = enhanced[0];
-        if (item.amount) setAmount(item.amount.toString());
-        if (item.category) setCategory(item.category);
-        if (item.detail) setDetail(item.detail);
-        if (item.date) setDate(item.date);
       }
     } catch (err) {
       console.error('Scan error:', err);
@@ -1057,15 +1052,34 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses }) {
 
   const handleSaveBulk = () => {
     if (scanResults && scanResults.length > 0) {
-      const cleaned = scanResults.filter(it => it.amount > 0).map(({_id, ...rest}) => rest);
+      const cleaned = scanResults.filter(it => it.amount > 0).map(it => {
+        const { _id, original_amount, original_currency, exchange_rate, ...rest } = it;
+        if (original_currency && original_amount) {
+          rest.detail = (rest.detail || '') + ' (' + original_amount + ' ' + original_currency + ')';
+        }
+        return rest;
+      });
       if (cleaned.length > 0) onSaveBulk(cleaned);
     }
   };
 
   const updateScanItem = (itemId, field, value) => {
-    setScanResults(prev => prev.map(item =>
-      item._id === itemId ? { ...item, [field]: field === 'amount' ? (parseInt(value.replace(/\D/g,'')) || 0) : value } : item
-    ));
+    setScanResults(prev => prev.map(item => {
+      if (item._id !== itemId) return item;
+      const updated = { ...item };
+      if (field === 'amount') {
+        updated.amount = parseInt(value.replace(/\D/g,'')) || 0;
+      } else if (field === 'exchange_rate') {
+        const rate = parseFloat(value) || 0;
+        updated.exchange_rate = rate;
+        if (updated.original_amount && rate > 0) {
+          updated.amount = Math.round(updated.original_amount * rate);
+        }
+      } else {
+        updated[field] = value;
+      }
+      return updated;
+    }));
   };
 
   const deleteScanItem = (itemId) => {
@@ -1148,6 +1162,17 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses }) {
                           </div>
                           <span class="text-xs text-zinc-400 shrink-0">đ</span>
                         </div>
+                        ${item.original_currency && html`
+                          <div class="flex items-center gap-1.5 mt-1.5 px-1.5 py-1.5 rounded" style="background:${dark ? '#1e3a5f' : '#eff6ff'};border:1px solid ${dark ? '#1e40af' : '#bfdbfe'}">
+                            <span class="text-xs font-medium" style="color:${dark ? '#93c5fd' : '#1d4ed8'}">${item.original_amount} ${item.original_currency}</span>
+                            <span class="text-xs" style="color:${dark ? '#60a5fa' : '#3b82f6'}">×</span>
+                            <input type="text" inputMode="decimal" value=${item.exchange_rate}
+                              onInput=${e => updateScanItem(item._id, 'exchange_rate', e.target.value)}
+                              class="w-20 px-1.5 py-0.5 rounded text-xs font-semibold text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              style="background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#3b82f6' : '#93c5fd'};color:${dark ? '#e2e8f0' : '#1e293b'}" />
+                            <span class="text-xs" style="color:${dark ? '#60a5fa' : '#3b82f6'}">= ${fmt(item.amount)}đ</span>
+                          </div>
+                        `}
                       </div>
                     `;
                   })}
@@ -1645,6 +1670,7 @@ function App() {
           onSaveBulk=${addBulkExpenses}
           onClose=${() => setModal(null)}
           allExpenses=${expenses}
+          dark=${dark}
         />
       `}
     </div>

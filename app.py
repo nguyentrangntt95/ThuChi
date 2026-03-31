@@ -203,16 +203,18 @@ def scan_with_groq(image_bytes, content_type):
             continue
         currency = item.get('currency', 'VND').upper().strip()
         detail = item.get('detail', '')[:80]
-        if currency != 'VND' and currency in EXCHANGE_RATES:
-            original_amt = amt
-            amt = int(amt * EXCHANGE_RATES[currency])
-            detail = f"{detail} ({original_amt} {currency})"
-        result.append({
+        entry = {
             'date': item.get('date', today_str),
             'category': cat,
             'detail': detail,
             'amount': amt,
-        })
+        }
+        if currency != 'VND' and currency in EXCHANGE_RATES:
+            entry['original_amount'] = amt
+            entry['original_currency'] = currency
+            entry['exchange_rate'] = EXCHANGE_RATES[currency]
+            entry['amount'] = int(amt * EXCHANGE_RATES[currency])
+        result.append(entry)
     return result
 
 # ── Public routes (no auth) ──
