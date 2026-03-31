@@ -1281,95 +1281,13 @@ function ExportButton({ expenses }) {
 }
 
 // ── Login Screen ──
-// ── WebAuthn helpers ──
-const webauthnSupported = () => window.PublicKeyCredential && navigator.credentials;
-const getWebauthnUser = () => load('tc-webauthn-user', '');
-const saveWebauthnUser = (u) => save('tc-webauthn-user', u);
-
-function bufToB64url(buf) {
-  const bytes = new Uint8Array(buf);
-  let s = '';
-  bytes.forEach(b => s += String.fromCharCode(b));
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-function b64urlToBuf(b64) {
-  const s = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));
-  const buf = new Uint8Array(s.length);
-  for (let i = 0; i < s.length; i++) buf[i] = s.charCodeAt(i);
-  return buf.buffer;
-}
-
-async function registerWebAuthn() {
-  const res = await fetch('/api/webauthn/register-options', { method: 'POST', headers: authHeaders() });
-  if (!res.ok) throw new Error('Không thể tạo yêu cầu đăng ký');
-  const options = await res.json();
-  // Decode challenge and user.id from base64url
-  options.challenge = b64urlToBuf(options.challenge);
-  options.user.id = b64urlToBuf(options.user.id);
-  if (options.excludeCredentials) {
-    options.excludeCredentials = options.excludeCredentials.map(c => ({...c, id: b64urlToBuf(c.id)}));
-  }
-  const credential = await navigator.credentials.create({ publicKey: options });
-  // Encode response for server
-  const body = {
-    id: credential.id,
-    rawId: bufToB64url(credential.rawId),
-    type: credential.type,
-    response: {
-      attestationObject: bufToB64url(credential.response.attestationObject),
-      clientDataJSON: bufToB64url(credential.response.clientDataJSON),
-    }
-  };
-  const vRes = await fetch('/api/webauthn/register-verify', {
-    method: 'POST', headers: authHeaders(), body: JSON.stringify(body)
-  });
-  if (!vRes.ok) { const d = await vRes.json(); throw new Error(d.error || 'Lỗi xác minh'); }
-  saveWebauthnUser(getStoredUser());
-  return true;
-}
-
-async function authenticateWebAuthn(userCode) {
-  const res = await fetch('/api/webauthn/auth-options', {
-    method: 'POST', headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ user_code: userCode })
-  });
-  if (!res.ok) { const d = await res.json(); throw new Error(d.error || 'Lỗi'); }
-  const options = await res.json();
-  options.challenge = b64urlToBuf(options.challenge);
-  if (options.allowCredentials) {
-    options.allowCredentials = options.allowCredentials.map(c => ({...c, id: b64urlToBuf(c.id)}));
-  }
-  const assertion = await navigator.credentials.get({ publicKey: options });
-  const body = {
-    user_code: userCode,
-    credential: {
-      id: assertion.id,
-      rawId: bufToB64url(assertion.rawId),
-      type: assertion.type,
-      response: {
-        authenticatorData: bufToB64url(assertion.response.authenticatorData),
-        clientDataJSON: bufToB64url(assertion.response.clientDataJSON),
-        signature: bufToB64url(assertion.response.signature),
-        userHandle: assertion.response.userHandle ? bufToB64url(assertion.response.userHandle) : null,
-      }
-    }
-  };
-  const vRes = await fetch('/api/webauthn/auth-verify', {
-    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)
-  });
-  const data = await vRes.json();
-  if (!vRes.ok) throw new Error(data.error || 'Lỗi xác minh');
-  return data; // { ok, token, user_code }
-}
-
 function LoginScreen({ onLogin }) {
   const [mode, setMode] = useState('login'); // 'login' or 'signup'
-  const [code, setCode] = useState(() => getWebauthnUser() || '');
+  const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const canFaceId = webauthnSupported() && !!getWebauthnUser();
 
   const handleSubmit = async () => {
     const trimmed = code.trim();
@@ -1392,45 +1310,12 @@ function LoginScreen({ onLogin }) {
     setLoading(false);
   };
 
-  const handleFaceId = async () => {
-    const user = getWebauthnUser();
-    if (!user) return;
-    setError('');
-    setLoading(true);
-    try {
-      const data = await authenticateWebAuthn(user);
-      save('tc-token', data.token);
-      save('tc-user', data.user_code);
-      onLogin(data.user_code);
-    } catch (e) {
-      setError(e.message || 'Face ID thất bại');
-    }
-    setLoading(false);
-  };
-
   return html`
     <div class="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-900 p-4">
       <div class="w-full max-w-md bg-white dark:bg-zinc-800 rounded-2xl p-8 shadow-lg text-center slide-up">
         <div class="text-5xl mb-4">💰</div>
         <h1 class="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-1">Thu Chi</h1>
         <p class="text-sm text-zinc-500 dark:text-zinc-400 mb-6">${mode === 'login' ? 'Đăng nhập tài khoản' : 'Tạo tài khoản mới'}</p>
-        ${canFaceId && mode === 'login' && html`
-          <button onClick=${handleFaceId} disabled=${loading}
-            class="w-full py-4 rounded-xl bg-blue-500 text-white font-semibold hover:bg-blue-600 transition-colors active:scale-95 disabled:opacity-40 text-sm mb-4 flex items-center justify-center gap-2">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-              <rect x="3" y="3" width="18" height="18" rx="4"/>
-              <circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/>
-              <circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/>
-              <path d="M9 15c1 1.5 5 1.5 6 0"/>
-            </svg>
-            ${loading ? 'Đang xác thực...' : 'Đăng nhập bằng Face ID'}
-          </button>
-          <div class="flex items-center gap-3 mb-4">
-            <div class="flex-1 h-px bg-zinc-200 dark:bg-zinc-700"></div>
-            <span class="text-xs text-zinc-400">hoặc</span>
-            <div class="flex-1 h-px bg-zinc-200 dark:bg-zinc-700"></div>
-          </div>
-        `}
         <input value=${code} onInput=${e => { setCode(e.target.value); setError(''); }}
           placeholder="Tên tài khoản"
           class="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-center text-lg font-medium placeholder:text-zinc-400 placeholder:text-base placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-emerald-500 mb-3"
@@ -1515,24 +1400,6 @@ function App() {
     setBudgets({});
   };
 
-  const [faceIdStatus, setFaceIdStatus] = useState('unknown'); // unknown, registered, not_registered
-  useEffect(() => {
-    if (!userCode || !getToken() || !webauthnSupported()) return;
-    fetch('/api/webauthn/status', { headers: authHeaders() })
-      .then(r => r.json())
-      .then(d => setFaceIdStatus(d.registered ? 'registered' : 'not_registered'))
-      .catch(() => {});
-  }, [userCode]);
-
-  const handleEnableFaceId = async () => {
-    try {
-      await registerWebAuthn();
-      setFaceIdStatus('registered');
-      alert('✅ Face ID đã được bật thành công!');
-    } catch (e) {
-      alert('❌ ' + (e.message || 'Không thể bật Face ID'));
-    }
-  };
 
   if (!authChecked) {
     return html`<div class="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
@@ -1684,16 +1551,6 @@ function App() {
             <span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium">${userCode}</span>
           </div>
           <div class="flex items-center gap-1">
-            ${webauthnSupported() && faceIdStatus === 'not_registered' && html`
-              <button onClick=${handleEnableFaceId} class="p-2 rounded-lg text-zinc-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors" title="Bật Face ID">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-                  <rect x="3" y="3" width="18" height="18" rx="4"/>
-                  <circle cx="9" cy="10" r="1" fill="currentColor" stroke="none"/>
-                  <circle cx="15" cy="10" r="1" fill="currentColor" stroke="none"/>
-                  <path d="M9 15c1 1.5 5 1.5 6 0"/>
-                </svg>
-              </button>
-            `}
             <button onClick=${handleLogout} class="p-2 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="Đổi tài khoản">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             </button>
