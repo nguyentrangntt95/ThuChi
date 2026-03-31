@@ -1247,9 +1247,31 @@ function App() {
   };
 
   const [showLogin, setShowLogin] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [renameErr, setRenameErr] = useState('');
 
   const handleLogout = () => {
     setShowLogin(true);
+  };
+
+  const handleRename = async () => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === userCode) return;
+    setRenameErr('');
+    try {
+      const res = await fetch('/api/rename-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ old: userCode, new: trimmed })
+      });
+      const data = await res.json();
+      if (!res.ok) { setRenameErr(data.error || 'Lỗi'); return; }
+      setUC(trimmed);
+      save('tc-user', trimmed);
+      setRenaming(false);
+      fetchData();
+    } catch (e) { setRenameErr('Lỗi kết nối'); }
   };
 
   if (showLogin) {
@@ -1378,7 +1400,21 @@ function App() {
         <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div class="flex items-center gap-2">
             <h1 class="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Thu Chi</h1>
-            <span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium">${userCode}</span>
+            ${renaming ? html`
+              <div class="flex items-center gap-1">
+                <input value=${newName} onInput=${e => setNewName(e.target.value)}
+                  class="w-20 px-2 py-0.5 text-xs rounded-full border border-emerald-300 dark:border-emerald-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  placeholder="Tên mới" autofocus onKeyDown=${e => e.key === 'Enter' && handleRename()} />
+                <button onClick=${handleRename} class="text-xs text-emerald-600 font-medium">OK</button>
+                <button onClick=${() => { setRenaming(false); setRenameErr(''); }} class="text-xs text-zinc-400">Hủy</button>
+              </div>
+              ${renameErr && html`<span class="text-xs text-red-500">${renameErr}</span>`}
+            ` : html`
+              <button onClick=${() => { setNewName(userCode === 'default' ? '' : userCode); setRenaming(true); }}
+                class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors cursor-pointer" title="Đổi tên">
+                ${userCode}
+              </button>
+            `}
           </div>
           <div class="flex items-center gap-1">
             <button onClick=${handleLogout} class="p-2 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="Đăng xuất">
