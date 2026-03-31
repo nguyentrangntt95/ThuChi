@@ -232,6 +232,11 @@ const apiCall = async (path, opts) => {
   return res.json();
 };
 const fmt = (n) => new Intl.NumberFormat('vi-VN').format(n);
+const fmtShort = (n) => {
+  if (n >= 1000000) { const m = n / 1000000; return (m % 1 === 0 ? m.toFixed(0) : m.toFixed(1).replace(/\.0$/, '')) + 'M'; }
+  if (n >= 1000) { const k = n / 1000; return (k % 1 === 0 ? k.toFixed(0) : k.toFixed(1).replace(/\.0$/, '')) + 'k'; }
+  return n.toString();
+};
 const today = () => new Date().toISOString().slice(0, 10);
 const monthOf = (d) => d.slice(0, 7);
 
@@ -532,10 +537,10 @@ function PieChart({ data, grandTotal }) {
       `)}
       <circle cx=${cx} cy=${cy} r="30" class="fill-white dark:fill-zinc-800" />
       ${act ? html`
-        <text x=${cx} y=${cy-6} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200" style="font-size:9px;font-weight:700">${fmt(act.total)}đ</text>
+        <text x=${cx} y=${cy-6} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200" style="font-size:9px;font-weight:700">${fmtShort(act.total)}</text>
         <text x=${cx} y=${cy+6} text-anchor="middle" style="font-size:8px;font-weight:600" fill=${act.hex}>${act.emoji} ${Math.round(act.total/grandTotal*100)}%</text>
       ` : html`
-        <text x=${cx} y=${cy-4} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200 text-[11px] font-bold">${fmt(grandTotal)}</text>
+        <text x=${cx} y=${cy-4} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200 text-[11px] font-bold">${fmtShort(grandTotal)}</text>
         <text x=${cx} y=${cy+10} text-anchor="middle" class="fill-zinc-400 text-[8px]">VNĐ</text>
       `}
     </svg>
@@ -564,7 +569,7 @@ function CategoryChart({ expenses }) {
             <div key=${d.id} class="flex items-center gap-2 text-xs">
               <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:${d.hex}"></span>
               <span class="text-zinc-600 dark:text-zinc-400 truncate">${d.emoji} ${d.name}</span>
-              <span class="ml-auto font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${fmt(d.total)}đ <span class="text-zinc-400">${Math.round(d.total/grandTotal*100)}%</span></span>
+              <span class="ml-auto font-medium text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${fmtShort(d.total)} <span class="text-zinc-400">${Math.round(d.total/grandTotal*100)}%</span></span>
             </div>
           `)}
         </div>
@@ -605,13 +610,13 @@ function DailySpendingChart({ expenses }) {
               <text x=${x + barW/2} y=${H - pad + 10} text-anchor="middle" class="fill-zinc-400" style="font-size:7px">${d[0].slice(8)}</text>
               ${isActive && html`
                 <rect x=${x + barW/2 - 28} y=${y - 18} width="56" height="16" rx="4" fill="#18181b" opacity="0.9" />
-                <text x=${x + barW/2} y=${y - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmt(d[1])}đ</text>
+                <text x=${x + barW/2} y=${y - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmtShort(d[1])}</text>
               `}
             </g>
           `;
         })}
       </svg>
-      <p class="text-xs text-zinc-400 mt-1 text-center">Trung bình: ${fmt(Math.round(avg))}đ/ngày</p>
+      <p class="text-xs text-zinc-400 mt-1 text-center">Trung bình: ${fmtShort(Math.round(avg))}/ngày</p>
     </div>
   `;
 }
@@ -654,7 +659,7 @@ function MonthlyComparisonChart({ expenses, budgets }) {
               <text x=${x + barW/2} y=${H - pad + 12} text-anchor="middle" class="fill-zinc-400" style="font-size:8px">${monthNames[monthNum]}</text>
               ${isActive ? html`
                 <rect x=${x + barW/2 - 30} y=${y - 18} width="60" height="16" rx="4" fill="#18181b" opacity="0.9" />
-                <text x=${x + barW/2} y=${y - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmt(d.total)}đ</text>
+                <text x=${x + barW/2} y=${y - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmtShort(d.total)}</text>
               ` : html`
                 <text x=${x + barW/2} y=${y - 4} text-anchor="middle" class="fill-zinc-500" style="font-size:7px">${d.total >= 1000000 ? (d.total/1000000).toFixed(1)+'tr' : d.total >= 1000 ? Math.round(d.total/1000)+'k' : d.total}</text>
               `}
@@ -713,7 +718,7 @@ function CategoryTrendChart({ expenses }) {
               <text x=${x + barW/2} y=${H - pad + 12} text-anchor="middle" class="fill-zinc-400" style="font-size:8px">${monthNames[monthNum]}</text>
               ${isActive && html`
                 <rect x=${x + barW/2 - 28} y=${topY - 18} width="56" height="16" rx="4" fill="#18181b" opacity="0.9" />
-                <text x=${x + barW/2} y=${topY - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmt(d.total)}đ</text>
+                <text x=${x + barW/2} y=${topY - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmtShort(d.total)}</text>
               `}
             </g>
           `;
@@ -752,7 +757,7 @@ function TopExpenses({ expenses, onEdit }) {
                 <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate">${e.detail || cat.name}</p>
                 <p class="text-xs text-zinc-400">${e.date.slice(5)}</p>
               </div>
-              <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">${fmt(e.amount)}đ</span>
+              <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">${fmtShort(e.amount)}</span>
             </div>
           `;
         })}
@@ -800,7 +805,7 @@ function WeekdayChart({ expenses }) {
               <text x=${x + barW/2} y=${H - pad + 12} text-anchor="middle" class="fill-zinc-500" style="font-size:8px;font-weight:${isWeekend ? '600' : '400'}">${d.label}</text>
               ${isActive && d.avg > 0 ? html`
                 <rect x=${x + barW/2 - 28} y=${y - 18} width="56" height="16" rx="4" fill="#18181b" opacity="0.9" />
-                <text x=${x + barW/2} y=${y - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmt(d.avg)}đ</text>
+                <text x=${x + barW/2} y=${y - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmtShort(d.avg)}</text>
               ` : d.avg > 0 ? html`<text x=${x + barW/2} y=${y - 3} text-anchor="middle" class="fill-zinc-400" style="font-size:6px">${d.avg >= 1000000 ? (d.avg/1000000).toFixed(1)+'tr' : Math.round(d.avg/1000)+'k'}</text>` : null}
             </g>
           `;
@@ -933,7 +938,7 @@ function ExpenseRow({ expense, onEdit, onDelete }) {
           <p class="text-xs text-zinc-400">${cat.name} \u00B7 ${expense.date.slice(8)}/${expense.date.slice(5,7)}</p>
         </div>
         <div class="text-right shrink-0">
-          <p class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">-${fmt(expense.amount)}đ</p>
+          <p class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">-${fmtShort(expense.amount)}</p>
         </div>
         ${!isMobile && html`
           <button onClick=${(e) => { e.stopPropagation(); onDelete(expense.id); }}
@@ -1493,7 +1498,7 @@ function App() {
           <div class="px-4 mt-2">
             <div class="px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-between">
               <span class="text-xs text-zinc-500 dark:text-zinc-400">${(catMap[filterCat] || catMap.other).emoji} ${(catMap[filterCat] || catMap.other).name}</span>
-              <span class="text-sm font-bold text-zinc-800 dark:text-zinc-200">${fmt(catTotals[filterCat])}đ</span>
+              <span class="text-sm font-bold text-zinc-800 dark:text-zinc-200">${fmtShort(catTotals[filterCat])}</span>
             </div>
           </div>
         `}
@@ -1510,7 +1515,7 @@ function App() {
             <div key=${date} class="mb-4">
               <div class="flex items-center justify-between mb-1 sticky top-[57px] bg-zinc-50 dark:bg-zinc-900 py-1 z-10">
                 <span class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase">${formatDateLabel(date)}</span>
-                <span class="text-xs text-zinc-400">${fmt(items.reduce((s,e) => s+e.amount, 0))}đ</span>
+                <span class="text-xs text-zinc-400">${fmtShort(items.reduce((s,e) => s+e.amount, 0))}</span>
               </div>
               <div class="bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 px-3">
                 ${items.map(e => html`<${ExpenseRow} key=${e.id} expense=${e} onEdit=${() => setModal(e)} onDelete=${deleteExpense} />`)}
