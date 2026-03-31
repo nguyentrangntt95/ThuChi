@@ -487,6 +487,8 @@ function BudgetBar({ total, budget, onSetBudget, month }) {
   const pct = budget > 0 ? Math.min((total / budget) * 100, 100) : 0;
   const over = budget > 0 && total > budget;
   const warn = budget > 0 && total > budget * 0.8 && !over;
+  const remain = budget > 0 ? budget - total : 0;
+  const monthLabel = month.slice(0, 4) === new Date().getFullYear().toString() ? 'Tháng ' + parseInt(month.slice(5)) : month;
 
   const handleSave = () => {
     const n = parseInt(val.replace(/\D/g, ''));
@@ -495,34 +497,44 @@ function BudgetBar({ total, budget, onSetBudget, month }) {
   };
 
   return html`
-    <div class="px-4 py-3 bg-white dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
-      <div class="flex items-center justify-between mb-1.5">
-        <span class="text-xs text-zinc-500 dark:text-zinc-400">
-          Tổng chi: <span class="font-bold text-sm ${over ? 'text-red-500' : 'text-zinc-800 dark:text-zinc-100'}">${fmt(total)}đ</span>
-        </span>
+    <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <div class="flex items-center justify-between mb-2">
+        <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">${monthLabel}</span>
         ${!editing ? html`
           <button onClick=${() => { setVal(budget > 0 ? budget.toString() : ''); setEditing(true); }}
-            class="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
-            ${budget > 0 ? 'NS '+month+': '+fmt(budget)+'đ' : '+ Đặt ngân sách tháng '+month.slice(5)}
+            class="text-xs px-2.5 py-1 rounded-lg ${budget > 0 ? 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'} hover:opacity-80 transition-colors">
+            ${budget > 0 ? 'Sửa ngân sách' : '+ Đặt ngân sách'}
           </button>
         ` : html`
           <div class="flex items-center gap-1.5">
             <input value=${val} onInput=${e => setVal(e.target.value)} placeholder="VD: 5000000"
-              class="w-28 px-2 py-0.5 text-xs rounded border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              class="w-28 px-2 py-1 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               autofocus onKeyDown=${e => e.key === 'Enter' && handleSave()} />
-            <button onClick=${handleSave} class="text-xs text-emerald-600 font-medium">OK</button>
-            <button onClick=${() => setEditing(false)} class="text-xs text-zinc-400">Hủy</button>
+            <button onClick=${handleSave} class="text-xs text-emerald-600 font-medium px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/30">OK</button>
+            <button onClick=${() => setEditing(false)} class="text-xs text-zinc-400 px-2 py-1">Hủy</button>
+          </div>
+        `}
+      </div>
+      <div class="flex items-end justify-between mb-2">
+        <div>
+          <p class="text-2xl font-bold tracking-tight ${over ? 'text-red-500' : 'text-zinc-800 dark:text-zinc-100'}">${fmt(total)}đ</p>
+          ${budget > 0 && html`<p class="text-xs text-zinc-400 mt-0.5">/ ${fmt(budget)}đ</p>`}
+        </div>
+        ${budget > 0 && html`
+          <div class="text-right">
+            <p class="text-lg font-bold ${over ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'}">${Math.round(pct)}%</p>
+            <p class="text-xs ${over ? 'text-red-400' : remain > 0 ? 'text-emerald-500' : 'text-zinc-400'}">
+              ${over ? 'Vượt ' + fmtShort(total - budget) : 'Còn ' + fmtShort(remain)}
+            </p>
           </div>
         `}
       </div>
       ${budget > 0 && html`
-        <div class="h-1.5 bg-zinc-100 dark:bg-zinc-700 rounded-full overflow-hidden">
+        <div class="h-2.5 bg-zinc-100 dark:bg-zinc-700 rounded-full overflow-hidden">
           <div class="h-full rounded-full transition-all duration-500 ${over ? 'bg-red-500' : warn ? 'bg-amber-500' : 'bg-emerald-500'}"
             style="width:${pct}%" />
         </div>
       `}
-      ${over && html`<p class="text-xs text-red-500 mt-1">\u26A0\uFE0F Vượt ngân sách ${fmt(total - budget)}đ</p>`}
-      ${warn && html`<p class="text-xs text-amber-500 mt-1">Đã dùng ${Math.round(pct)}% ngân sách</p>`}
     </div>
   `;
 }
