@@ -12,8 +12,26 @@ from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, send_file, Response
 from datetime import date
 from functools import wraps
+from webauthn import generate_registration_options, verify_registration_response, generate_authentication_options, verify_authentication_response
+from webauthn.helpers.structs import AuthenticatorSelectionCriteria, ResidentKeyRequirement, UserVerificationRequirement, PublicKeyCredentialDescriptor
+from webauthn.helpers import bytes_to_base64url, base64url_to_bytes, options_to_json
 
 app = Flask(__name__)
+
+# WebAuthn config
+RP_ID = os.environ.get("RP_ID", "thuchi-production-1d0c.up.railway.app")
+RP_NAME = "Thu Chi"
+RP_ORIGIN = os.environ.get("RP_ORIGIN", "https://thuchi-production-1d0c.up.railway.app")
+
+# In-memory challenge store: { challenge_base64: { user_code, timestamp } }
+webauthn_challenges = {}
+
+def cleanup_challenges():
+    """Remove challenges older than 5 minutes"""
+    now = time.time()
+    expired = [k for k, v in webauthn_challenges.items() if now - v['timestamp'] > 300]
+    for k in expired:
+        del webauthn_challenges[k]
 
 clients = []  # list of (user_code, queue) tuples
 
@@ -67,6 +85,8 @@ def init_db():
         cur.execute("ALTER TABLE budgets DROP CONSTRAINT IF EXISTS budgets_pkey")
         cur.execute("ALTER TABLE budgets ADD COLUMN IF NOT EXISTS user_code TEXT DEFAULT 'default'")
         cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS token TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS webauthn_cred_id TEXT")
+        cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS webauthn_public_key BYTEA")
         cur.execute("""
             DO $$ BEGIN
                 IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'budgets_pkey_new') THEN
@@ -298,6 +318,153 @@ def reset_password():
     cur.close()
     conn.close()
     return jsonify({"ok": True, "updated": updated})
+
+# ── WebAuthn (Face ID / Biometric) ──
+
+@app.route("/api/webauthn/register-options", methods=["POST"])
+@require_auth
+def webauthn_register_options():
+    """Generate registration options for the authenticated user"""
+    user_code = get_user_code()
+    cleanup_challenges()
+    options = generate_registration_options(
+        rp_id=RP_ID,
+        rp_name=RP_NAME,
+        user_id=user_code.encode('utf-8'),
+        user_name=user_code,
+        user_display_name=user_code,
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            resident_key=ResidentKeyRequirement.PREFERRED,
+            user_verification=UserVerificationRequirement.REQUIRED,
+        ),
+    )
+    # Store challenge
+    challenge_b64 = bytes_to_base64url(options.challenge)
+    webauthn_challenges[challenge_b64] = {'user_code': user_code, 'timestamp': time.time()}
+    return Response(options_to_json(options), content_type="application/json")
+
+@app.route("/api/webauthn/register-verify", methods=["POST"])
+@require_auth
+def webauthn_register_verify():
+    """Verify registration response and store credential"""
+    user_code = get_user_code()
+    body = request.json
+    # Find matching challenge
+    matched_challenge = None
+    for ch, info in webauthn_challenges.items():
+        if info['user_code'] == user_code:
+            matched_challenge = ch
+            break
+    if not matched_challenge:
+        return jsonify({"error": "No pending challenge"}), 400
+    try:
+        credential = verify_registration_response(
+            credential=body,
+            expected_challenge=base64url_to_bytes(matched_challenge),
+            expected_rp_id=RP_ID,
+            expected_origin=RP_ORIGIN,
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    finally:
+        webauthn_challenges.pop(matched_challenge, None)
+    # Store credential in DB
+    cred_id_b64 = bytes_to_base64url(credential.credential_id)
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET webauthn_cred_id=%s, webauthn_public_key=%s WHERE user_code=%s",
+                (cred_id_b64, credential.credential_public_key, user_code))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True})
+
+@app.route("/api/webauthn/auth-options", methods=["POST"])
+def webauthn_auth_options():
+    """Generate authentication options (no auth required - this IS login)"""
+    data = request.json or {}
+    user_code = (data.get("user_code") or "").strip()
+    if not user_code:
+        return jsonify({"error": "Cần tên tài khoản"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT webauthn_cred_id FROM users WHERE user_code=%s", (user_code,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row or not row['webauthn_cred_id']:
+        return jsonify({"error": "Tài khoản chưa đăng ký Face ID"}), 404
+    cleanup_challenges()
+    cred_id_bytes = base64url_to_bytes(row['webauthn_cred_id'])
+    options = generate_authentication_options(
+        rp_id=RP_ID,
+        allow_credentials=[PublicKeyCredentialDescriptor(id=cred_id_bytes)],
+        user_verification=UserVerificationRequirement.REQUIRED,
+    )
+    challenge_b64 = bytes_to_base64url(options.challenge)
+    webauthn_challenges[challenge_b64] = {'user_code': user_code, 'timestamp': time.time()}
+    return Response(options_to_json(options), content_type="application/json")
+
+@app.route("/api/webauthn/auth-verify", methods=["POST"])
+def webauthn_auth_verify():
+    """Verify authentication response and return token"""
+    body = request.json
+    user_code = (body.get("user_code") or "").strip()
+    credential_data = body.get("credential")
+    if not user_code or not credential_data:
+        return jsonify({"error": "Missing data"}), 400
+    # Find matching challenge
+    matched_challenge = None
+    for ch, info in webauthn_challenges.items():
+        if info['user_code'] == user_code:
+            matched_challenge = ch
+            break
+    if not matched_challenge:
+        return jsonify({"error": "No pending challenge"}), 400
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT webauthn_cred_id, webauthn_public_key FROM users WHERE user_code=%s", (user_code,))
+    row = cur.fetchone()
+    if not row or not row['webauthn_cred_id']:
+        cur.close()
+        conn.close()
+        return jsonify({"error": "No credential found"}), 400
+    try:
+        verification = verify_authentication_response(
+            credential=credential_data,
+            expected_challenge=base64url_to_bytes(matched_challenge),
+            expected_rp_id=RP_ID,
+            expected_origin=RP_ORIGIN,
+            credential_public_key=bytes(row['webauthn_public_key']),
+            credential_current_sign_count=0,
+        )
+    except Exception as e:
+        cur.close()
+        conn.close()
+        return jsonify({"error": str(e)}), 400
+    finally:
+        webauthn_challenges.pop(matched_challenge, None)
+    # Auth success - generate token
+    token = generate_token()
+    cur.execute("UPDATE users SET token=%s WHERE user_code=%s", (token, user_code))
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "token": token, "user_code": user_code})
+
+@app.route("/api/webauthn/status")
+@require_auth
+def webauthn_status():
+    """Check if current user has WebAuthn registered"""
+    user_code = get_user_code()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT webauthn_cred_id FROM users WHERE user_code=%s", (user_code,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    has = bool(row and row['webauthn_cred_id'])
+    return jsonify({"registered": has})
 
 # ── Protected routes (require auth) ──
 
