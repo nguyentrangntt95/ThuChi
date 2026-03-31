@@ -481,7 +481,7 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
   `;
 }
 
-function BudgetBar({ total, budget, onSetBudget, month }) {
+function BudgetBar({ total, budget, onSetBudget, month, dark }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState('');
   const pct = budget > 0 ? Math.min((total / budget) * 100, 100) : 0;
@@ -497,42 +497,44 @@ function BudgetBar({ total, budget, onSetBudget, month }) {
   };
 
   return html`
-    <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+    <div class="mx-4 mt-3 p-4 rounded-xl" style="background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#334155' : '#e4e4e7'}">
       <div class="flex items-center justify-between mb-2">
-        <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">${monthLabel}</span>
+        <span class="text-sm font-semibold" style="color:${dark ? '#f1f5f9' : '#27272a'}">${monthLabel}</span>
         ${!editing ? html`
           <button onClick=${() => { setVal(budget > 0 ? budget.toString() : ''); setEditing(true); }}
-            class="text-xs px-2.5 py-1 rounded-lg ${budget > 0 ? 'bg-zinc-100 dark:bg-zinc-700 text-zinc-500 dark:text-zinc-400' : 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'} hover:opacity-80 transition-colors">
+            class="text-xs px-2.5 py-1 rounded-lg hover:opacity-80 transition-colors"
+            style="background:${budget > 0 ? (dark ? '#334155' : '#f4f4f5') : (dark ? '#064e3b' : '#ecfdf5')};color:${budget > 0 ? (dark ? '#94a3b8' : '#71717a') : (dark ? '#34d399' : '#059669')}">
             ${budget > 0 ? 'Sửa ngân sách' : '+ Đặt ngân sách'}
           </button>
         ` : html`
           <div class="flex items-center gap-1.5">
             <input value=${val} onInput=${e => setVal(e.target.value)} placeholder="VD: 5000000"
-              class="w-28 px-2 py-1 text-xs rounded-lg border border-zinc-300 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              class="w-28 px-2 py-1 text-xs rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              style="background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#475569' : '#d4d4d8'};color:${dark ? '#e2e8f0' : '#27272a'}"
               autofocus onKeyDown=${e => e.key === 'Enter' && handleSave()} />
-            <button onClick=${handleSave} class="text-xs text-emerald-600 font-medium px-2 py-1 rounded-lg hover:bg-emerald-50 dark:hover:bg-emerald-900/30">OK</button>
-            <button onClick=${() => setEditing(false)} class="text-xs text-zinc-400 px-2 py-1">Hủy</button>
+            <button onClick=${handleSave} class="text-xs font-medium px-2 py-1 rounded-lg" style="color:#10b981">OK</button>
+            <button onClick=${() => setEditing(false)} class="text-xs px-2 py-1" style="color:${dark ? '#94a3b8' : '#a1a1aa'}">Hủy</button>
           </div>
         `}
       </div>
       <div class="flex items-end justify-between mb-2">
         <div>
-          <p class="text-2xl font-bold tracking-tight ${over ? 'text-red-500' : 'text-zinc-800 dark:text-zinc-100'}">${fmt(total)}đ</p>
-          ${budget > 0 && html`<p class="text-xs text-zinc-400 mt-0.5">/ ${fmt(budget)}đ</p>`}
+          <p class="text-2xl font-bold tracking-tight" style="color:${over ? '#ef4444' : dark ? '#f1f5f9' : '#18181b'}">${fmt(total)}đ</p>
+          ${budget > 0 && html`<p class="text-xs mt-0.5" style="color:${dark ? '#64748b' : '#a1a1aa'}">/ ${fmt(budget)}đ</p>`}
         </div>
         ${budget > 0 && html`
           <div class="text-right">
-            <p class="text-lg font-bold ${over ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'}">${Math.round(pct)}%</p>
-            <p class="text-xs ${over ? 'text-red-400' : remain > 0 ? 'text-emerald-500' : 'text-zinc-400'}">
+            <p class="text-lg font-bold" style="color:${over ? '#ef4444' : '#10b981'}">${Math.round(pct)}%</p>
+            <p class="text-xs" style="color:${over ? '#f87171' : '#10b981'}">
               ${over ? 'Vượt ' + fmtShort(total - budget) : 'Còn ' + fmtShort(remain)}
             </p>
           </div>
         `}
       </div>
       ${budget > 0 && html`
-        <div class="h-2.5 bg-zinc-100 dark:bg-zinc-700 rounded-full overflow-hidden">
-          <div class="h-full rounded-full transition-all duration-500 ${over ? 'bg-red-500' : warn ? 'bg-amber-500' : 'bg-emerald-500'}"
-            style="width:${pct}%" />
+        <div class="h-2.5 rounded-full overflow-hidden" style="background:${dark ? '#334155' : '#f4f4f5'}">
+          <div class="h-full rounded-full transition-all duration-500"
+            style="width:${pct}%;background:${over ? '#ef4444' : warn ? '#f59e0b' : '#10b981'}" />
         </div>
       `}
     </div>
@@ -1535,26 +1537,34 @@ function App() {
 
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} />
-        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} month=${budgetMonth} />
+        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} month=${budgetMonth} dark=${dark} />
         ${visibleDups.length > 0 && html`
           <div class="px-4 mt-3 space-y-2">
             ${visibleDups.map(group => {
               const dupKey = group[0].date + '|' + group[0].amount;
               return html`
-                <div key=${dupKey} class="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl flex items-start gap-2 slide-up">
+                <div key=${dupKey} class="p-3 rounded-xl flex items-start gap-2 slide-up cursor-pointer" style="background:${dark ? '#422006' : '#fffbeb'};border:1px solid ${dark ? '#92400e' : '#fde68a'}"
+                  onClick=${() => {
+                    setFilterCat('all');
+                    setSearchQuery('');
+                    setTimeout(() => {
+                      const el = document.getElementById('date-' + group[0].date);
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }, 100);
+                  }}>
                   <span class="text-base shrink-0 mt-0.5">⚠️</span>
                   <div class="flex-1 min-w-0">
-                    <p class="text-xs font-semibold text-amber-700 dark:text-amber-300">Có ${group.length} khoản giống nhau: ${fmt(group[0].amount)}đ ngày ${group[0].date.slice(5)}</p>
+                    <p class="text-xs font-semibold" style="color:${dark ? '#fcd34d' : '#b45309'}">Có ${group.length} khoản giống nhau: ${fmt(group[0].amount)}đ ngày ${group[0].date.slice(5)}</p>
                     <div class="mt-1 space-y-0.5">
                       ${group.map(e => html`
-                        <p key=${e.id} class="text-xs text-amber-600 dark:text-amber-400 cursor-pointer hover:underline truncate" onClick=${() => setModal(e)}>
+                        <p key=${e.id} class="text-xs truncate" style="color:${dark ? '#fbbf24' : '#d97706'}">
                           ${(catMap[e.category]||catMap.other).emoji} ${e.detail || (catMap[e.category]||catMap.other).name}
                         </p>
                       `)}
                     </div>
                   </div>
-                  <button onClick=${() => setDismissedDups(prev => [...prev, dupKey])}
-                    class="shrink-0 text-amber-400 hover:text-amber-600 text-sm p-1" title="Bỏ qua">✕</button>
+                  <button onClick=${(ev) => { ev.stopPropagation(); setDismissedDups(prev => [...prev, dupKey]); }}
+                    class="shrink-0 text-sm p-1" style="color:${dark ? '#fbbf24' : '#d97706'}" title="Bỏ qua">✕</button>
                 </div>
               `;
             })}
@@ -1605,7 +1615,7 @@ function App() {
             </div>
           `}
           ${grouped.map(([date, items]) => html`
-            <div key=${date} class="mb-4">
+            <div key=${date} id=${'date-' + date} class="mb-4">
               <div class="flex items-center justify-between mb-1 sticky top-[57px] bg-zinc-50 dark:bg-zinc-900 py-1 z-10">
                 <span class="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase">${formatDateLabel(date)}</span>
                 <span class="text-xs text-zinc-400">${fmt(items.reduce((s,e) => s+e.amount, 0))}đ</span>
