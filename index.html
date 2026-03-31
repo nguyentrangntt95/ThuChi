@@ -222,8 +222,13 @@ const html = htm.bind(h);
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const getUserCode = () => load('tc-user', '');
+const setUserCode = (code) => save('tc-user', code);
 const apiCall = async (path, opts) => {
-  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+  const uc = getUserCode();
+  const headers = { 'Content-Type': 'application/json' };
+  if (uc) headers['X-User-Code'] = uc;
+  const res = await fetch(path, { headers, ...opts });
   return res.json();
 };
 const fmt = (n) => new Intl.NumberFormat('vi-VN').format(n);
@@ -234,7 +239,10 @@ const monthOf = (d) => d.slice(0, 7);
 async function scanImage(file) {
   const formData = new FormData();
   formData.append('image', file);
-  const res = await fetch('/api/scan', { method: 'POST', body: formData });
+  const uc = getUserCode();
+  const headers = {};
+  if (uc) headers['X-User-Code'] = uc;
+  const res = await fetch('/api/scan', { method: 'POST', body: formData, headers });
   const data = await res.json();
   return data.items || [];
 }
@@ -448,7 +456,7 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
   `;
 }
 
-function BudgetBar({ total, budget, onSetBudget }) {
+function BudgetBar({ total, budget, onSetBudget, month }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState('');
   const pct = budget > 0 ? Math.min((total / budget) * 100, 100) : 0;
@@ -470,7 +478,7 @@ function BudgetBar({ total, budget, onSetBudget }) {
         ${!editing ? html`
           <button onClick=${() => { setVal(budget > 0 ? budget.toString() : ''); setEditing(true); }}
             class="text-xs text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors">
-            ${budget > 0 ? 'Ngân sách: '+fmt(budget)+'đ' : '+ Đặt ngân sách'}
+            ${budget > 0 ? 'NS '+month+': '+fmt(budget)+'đ' : '+ Đặt ngân sách tháng '+month.slice(5)}
           </button>
         ` : html`
           <div class="flex items-center gap-1.5">
@@ -554,6 +562,7 @@ function CategoryChart({ expenses }) {
 // ── Dashboard Charts ──
 
 function DailySpendingChart({ expenses }) {
+  const [active, setActive] = useState(-1);
   const data = useMemo(() => {
     const byDate = {};
     expenses.forEach(e => { byDate[e.date] = (byDate[e.date] || 0) + e.amount; });
@@ -568,18 +577,22 @@ function DailySpendingChart({ expenses }) {
   return html`
     <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
       <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">Chi tiêu hàng ngày</h3>
-      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
-        <!-- avg line -->
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" onMouseLeave=${() => setActive(-1)}>
         <line x1="${pad}" y1="${pad + (1 - avg/max) * (H - pad*2)}" x2="${W}" y2="${pad + (1 - avg/max) * (H - pad*2)}" stroke="#a1a1aa" stroke-width="0.5" stroke-dasharray="3,3" />
         <text x="${pad - 2}" y="${pad + (1 - avg/max) * (H - pad*2) - 3}" text-anchor="end" class="fill-zinc-400" style="font-size:7px">TB</text>
         ${data.map((d, i) => {
           const barH = max > 0 ? (d[1] / max) * (H - pad*2) : 0;
           const x = pad + i * ((W - pad) / data.length) + ((W - pad) / data.length - barW) / 2;
           const y = H - pad - barH;
+          const isActive = active === i;
           return html`
-            <g key=${d[0]}>
-              <rect x=${x} y=${y} width=${barW} height=${barH} rx="2" fill="#10b981" opacity="0.8" />
+            <g key=${d[0]} onMouseEnter=${() => setActive(i)} onClick=${() => setActive(active === i ? -1 : i)} style="cursor:pointer">
+              <rect x=${x} y=${y} width=${barW} height=${barH} rx="2" fill=${isActive ? '#059669' : '#10b981'} opacity=${isActive ? '1' : '0.8'} />
               <text x=${x + barW/2} y=${H - pad + 10} text-anchor="middle" class="fill-zinc-400" style="font-size:7px">${d[0].slice(8)}</text>
+              ${isActive && html`
+                <rect x=${x + barW/2 - 28} y=${y - 18} width="56" height="16" rx="4" fill="#18181b" opacity="0.9" />
+                <text x=${x + barW/2} y=${y - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmt(d[1])}đ</text>
+              `}
             </g>
           `;
         })}
@@ -590,6 +603,7 @@ function DailySpendingChart({ expenses }) {
 }
 
 function MonthlyComparisonChart({ expenses, budgets }) {
+  const [active, setActive] = useState(-1);
   const data = useMemo(() => {
     const byMonth = {};
     expenses.forEach(e => {
@@ -609,21 +623,27 @@ function MonthlyComparisonChart({ expenses, budgets }) {
   return html`
     <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
       <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">So sánh theo tháng</h3>
-      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">
+      <svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto" onMouseLeave=${() => setActive(-1)}>
         ${data.map((d, i) => {
           const barH = max > 0 ? (d.total / max) * (H - pad*2) : 0;
           const x = pad + i * ((W - pad) / data.length) + ((W - pad) / data.length - barW) / 2;
           const y = H - pad - barH;
           const overBudget = d.budget > 0 && d.total > d.budget;
           const monthNum = parseInt(d.month.slice(5));
+          const isActive = active === i;
           return html`
-            <g key=${d.month}>
-              <rect x=${x} y=${y} width=${barW} height=${barH} rx="3" fill=${overBudget ? '#ef4444' : '#10b981'} opacity="0.8" />
+            <g key=${d.month} onMouseEnter=${() => setActive(i)} onClick=${() => setActive(active === i ? -1 : i)} style="cursor:pointer">
+              <rect x=${x} y=${y} width=${barW} height=${barH} rx="3" fill=${overBudget ? '#ef4444' : '#10b981'} opacity=${isActive ? '1' : '0.8'} />
               ${d.budget > 0 && html`
                 <line x1=${x - 3} y1=${H - pad - (d.budget / max) * (H - pad*2)} x2=${x + barW + 3} y2=${H - pad - (d.budget / max) * (H - pad*2)} stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3,2" />
               `}
               <text x=${x + barW/2} y=${H - pad + 12} text-anchor="middle" class="fill-zinc-400" style="font-size:8px">${monthNames[monthNum]}</text>
-              <text x=${x + barW/2} y=${y - 4} text-anchor="middle" class="fill-zinc-500" style="font-size:7px">${d.total >= 1000000 ? (d.total/1000000).toFixed(1)+'tr' : d.total >= 1000 ? Math.round(d.total/1000)+'k' : d.total}</text>
+              ${isActive ? html`
+                <rect x=${x + barW/2 - 30} y=${y - 18} width="60" height="16" rx="4" fill="#18181b" opacity="0.9" />
+                <text x=${x + barW/2} y=${y - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmt(d.total)}đ</text>
+              ` : html`
+                <text x=${x + barW/2} y=${y - 4} text-anchor="middle" class="fill-zinc-500" style="font-size:7px">${d.total >= 1000000 ? (d.total/1000000).toFixed(1)+'tr' : d.total >= 1000 ? Math.round(d.total/1000)+'k' : d.total}</text>
+              `}
             </g>
           `;
         })}
@@ -721,6 +741,7 @@ function TopExpenses({ expenses, onEdit }) {
 }
 
 function WeekdayChart({ expenses }) {
+  const [active, setActive] = useState(-1);
   const data = useMemo(() => {
     const days = [0,0,0,0,0,0,0];
     const counts = [0,0,0,0,0,0,0];
@@ -751,11 +772,15 @@ function WeekdayChart({ expenses }) {
           const x = pad + i * ((W - pad*2) / 7) + ((W - pad*2) / 7 - barW) / 2;
           const y = H - pad - barH;
           const isWeekend = i === 0 || i === 6;
+          const isActive = active === i;
           return html`
-            <g key=${i}>
-              <rect x=${x} y=${y} width=${barW} height=${barH} rx="3" fill=${isWeekend ? '#f97316' : '#3b82f6'} opacity="0.75" />
+            <g key=${i} onMouseEnter=${() => setActive(i)} onClick=${() => setActive(active === i ? -1 : i)} style="cursor:pointer">
+              <rect x=${x} y=${y} width=${barW} height=${barH} rx="3" fill=${isWeekend ? '#f97316' : '#3b82f6'} opacity=${isActive ? '1' : '0.75'} />
               <text x=${x + barW/2} y=${H - pad + 12} text-anchor="middle" class="fill-zinc-500" style="font-size:8px;font-weight:${isWeekend ? '600' : '400'}">${d.label}</text>
-              ${d.avg > 0 && html`<text x=${x + barW/2} y=${y - 3} text-anchor="middle" class="fill-zinc-400" style="font-size:6px">${d.avg >= 1000000 ? (d.avg/1000000).toFixed(1)+'tr' : Math.round(d.avg/1000)+'k'}</text>`}
+              ${isActive && d.avg > 0 ? html`
+                <rect x=${x + barW/2 - 28} y=${y - 18} width="56" height="16" rx="4" fill="#18181b" opacity="0.9" />
+                <text x=${x + barW/2} y=${y - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmt(d.avg)}đ</text>
+              ` : d.avg > 0 ? html`<text x=${x + barW/2} y=${y - 3} text-anchor="middle" class="fill-zinc-400" style="font-size:6px">${d.avg >= 1000000 ? (d.avg/1000000).toFixed(1)+'tr' : Math.round(d.avg/1000)+'k'}</text>` : null}
             </g>
           `;
         })}
@@ -783,7 +808,6 @@ function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit }) {
       </div>
       ${expanded && html`
         <div class="fade-in">
-          <${CategoryChart} expenses=${rangeExpenses} />
           <${DailySpendingChart} expenses=${rangeExpenses} />
           <${MonthlyComparisonChart} expenses=${allExpenses} budgets=${budgets} />
           <${CategoryTrendChart} expenses=${allExpenses} />
@@ -1170,8 +1194,39 @@ function ExportButton({ expenses }) {
   `;
 }
 
+// ── Login Screen ──
+function LoginScreen({ onLogin }) {
+  const [code, setCode] = useState('');
+  const handleLogin = () => {
+    const trimmed = code.trim();
+    if (trimmed.length < 1) return;
+    onLogin(trimmed);
+  };
+  return html`
+    <div class="min-h-screen flex items-center justify-center bg-zinc-50 dark:bg-zinc-900 p-4">
+      <div class="w-full max-w-md bg-white dark:bg-zinc-800 rounded-2xl p-8 shadow-lg text-center slide-up">
+        <div class="text-5xl mb-4">💰</div>
+        <h1 class="text-xl font-bold text-zinc-900 dark:text-zinc-100 mb-1">Thu Chi</h1>
+        <p class="text-sm text-zinc-500 dark:text-zinc-400 mb-6">Nhập mã của bạn để đồng bộ dữ liệu</p>
+        <input value=${code} onInput=${e => setCode(e.target.value)}
+          placeholder="VD: trang, gia-dinh, 2026..."
+          class="w-full px-4 py-3 rounded-xl border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-center text-lg font-medium placeholder:text-zinc-400 placeholder:text-base placeholder:font-normal focus:outline-none focus:ring-2 focus:ring-emerald-500 mb-4"
+          onKeyDown=${e => e.key === 'Enter' && handleLogin()}
+          autofocus />
+        <button onClick=${handleLogin}
+          class="w-full py-3 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition-colors active:scale-95 disabled:opacity-40 text-sm"
+          disabled=${!code.trim()}>
+          Đăng nhập
+        </button>
+        <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-4">Mỗi mã là một tài khoản riêng biệt</p>
+      </div>
+    </div>
+  `;
+}
+
 // ── App ──
 function App() {
+  const [userCode, setUC] = useState(() => getUserCode());
   const [dark, setDark] = useState(() => load('tc-dark', false));
   const [expenses, setExpenses] = useState([]);
   const [budgets, setBudgets] = useState({});
@@ -1182,6 +1237,25 @@ function App() {
   const [showQR, setShowQR] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+
+  const handleLogin = (code) => {
+    setUserCode(code);
+    save('tc-user', code);
+    setExpenses([]);
+    setBudgets({});
+    setLoading(true);
+  };
+
+  const handleLogout = () => {
+    setUserCode('');
+    save('tc-user', '');
+    setExpenses([]);
+    setBudgets({});
+  };
+
+  if (!userCode) {
+    return html`<${LoginScreen} onLogin=${handleLogin} />`;
+  }
 
   const fetchData = useCallback(async () => {
     try {
@@ -1200,11 +1274,12 @@ function App() {
     }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchData(); }, [fetchData, userCode]);
   useEffect(() => {
     let es;
     const connect = () => {
-      es = new EventSource('/api/events');
+      const uc = getUserCode();
+      es = new EventSource('/api/events' + (uc ? '?user=' + encodeURIComponent(uc) : ''));
       es.onmessage = () => fetchData();
       es.onerror = () => { es.close(); setTimeout(connect, 3000); };
     };
@@ -1212,7 +1287,7 @@ function App() {
     const onFocus = () => fetchData();
     window.addEventListener('focus', onFocus);
     return () => { es.close(); window.removeEventListener('focus', onFocus); };
-  }, [fetchData]);
+  }, [fetchData, userCode]);
   useEffect(() => { save('tc-dark', dark); document.documentElement.classList.toggle('dark', dark); }, [dark]);
 
   const rangeExpenses = useMemo(() =>
@@ -1234,8 +1309,17 @@ function App() {
   }, [rangeExpenses, filterCat, searchQuery]);
 
   const rangeTotal = useMemo(() => rangeExpenses.reduce((s, e) => s + e.amount, 0), [rangeExpenses]);
-  const currentMonth = today().slice(0, 7);
-  const monthBudget = budgets[currentMonth] || 0;
+
+  // Category totals for filter bar
+  const catTotals = useMemo(() => {
+    const totals = {};
+    rangeExpenses.forEach(e => { totals[e.category] = (totals[e.category] || 0) + e.amount; });
+    return totals;
+  }, [rangeExpenses]);
+
+  // Per-month budget: use the month of dateFrom for budget display
+  const budgetMonth = useMemo(() => dateFrom.slice(0, 7), [dateFrom]);
+  const monthBudget = budgets[budgetMonth] || 0;
 
   const addExpense = async (data) => {
     catMemory.learn(data.detail, data.category);
@@ -1267,8 +1351,8 @@ function App() {
   };
 
   const setBudget = async (v) => {
-    setBudgets(prev => ({ ...prev, [currentMonth]: v }));
-    await apiCall('/api/budgets', { method: 'POST', body: JSON.stringify({ month: currentMonth, amount: v }) });
+    setBudgets(prev => ({ ...prev, [budgetMonth]: v }));
+    await apiCall('/api/budgets', { method: 'POST', body: JSON.stringify({ month: budgetMonth, amount: v }) });
   };
 
   const grouped = useMemo(() => {
@@ -1293,10 +1377,14 @@ function App() {
     <div class="min-h-screen transition-colors ${dark ? 'bg-zinc-900' : 'bg-zinc-50'}">
       <header class="sticky top-0 z-40 backdrop-blur-md bg-white/80 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800">
         <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
-          <div>
+          <div class="flex items-center gap-2">
             <h1 class="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Thu Chi</h1>
+            <span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium">${userCode}</span>
           </div>
           <div class="flex items-center gap-1">
+            <button onClick=${handleLogout} class="p-2 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="Đăng xuất">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            </button>
             <button onClick=${() => setShowQR(true)} class="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="QR Code">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4"/><line x1="22" y1="18" x2="22" y2="22"/><line x1="18" y1="22" x2="22" y2="22"/></svg>
             </button>
@@ -1315,7 +1403,8 @@ function App() {
 
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} />
-        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} />
+        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} month=${budgetMonth} />
+        <${CategoryChart} expenses=${rangeExpenses} />
         <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} />
 
         <div class="px-4 mt-4">
@@ -1336,12 +1425,20 @@ function App() {
               filterCat === 'all' ? 'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
             }">Tất cả</button>
           ${CATEGORIES.map(c => html`
-            <button key=${c.id} onClick=${() => setFilterCat(c.id)}
+            <button key=${c.id} onClick=${() => setFilterCat(filterCat === c.id ? 'all' : c.id)}
               class="shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                 filterCat === c.id ? 'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'
               }">${c.emoji} ${c.name}</button>
           `)}
         </div>
+        ${filterCat !== 'all' && catTotals[filterCat] > 0 && html`
+          <div class="px-4 mt-2">
+            <div class="px-3 py-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-between">
+              <span class="text-xs text-zinc-500 dark:text-zinc-400">${(catMap[filterCat] || catMap.other).emoji} ${(catMap[filterCat] || catMap.other).name}</span>
+              <span class="text-sm font-bold text-zinc-800 dark:text-zinc-200">${fmt(catTotals[filterCat])}đ</span>
+            </div>
+          </div>
+        `}
 
         <div class="px-4 mt-3">
           ${grouped.length === 0 && html`

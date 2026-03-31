@@ -4,6 +4,7 @@ import json
 import time
 import queue
 import base64
+import hashlib
 import psycopg2
 import requests as http_requests
 from psycopg2.extras import RealDictCursor
@@ -12,17 +13,18 @@ from datetime import date
 
 app = Flask(__name__)
 
-clients = []
+clients = []  # list of (user_code, queue) tuples
 
-def notify_clients():
+def notify_clients(user_code=None):
     dead = []
-    for q in clients:
-        try:
-            q.put_nowait("update")
-        except:
-            dead.append(q)
-    for q in dead:
-        clients.remove(q)
+    for uc, q in clients:
+        if user_code is None or uc == user_code:
+            try:
+                q.put_nowait("update")
+            except:
+                dead.append((uc, q))
+    for item in dead:
+        clients.remove(item)
 
 def get_db():
     return psycopg2.connect(os.environ["DATABASE_URL"], cursor_factory=RealDictCursor)
@@ -37,20 +39,43 @@ def init_db():
             category TEXT NOT NULL,
             detail TEXT DEFAULT '',
             amount INTEGER NOT NULL,
-            created_at TIMESTAMP DEFAULT NOW()
+            created_at TIMESTAMP DEFAULT NOW(),
+            user_code TEXT DEFAULT 'default'
         )
     """)
     cur.execute("""
         CREATE TABLE IF NOT EXISTS budgets (
-            month TEXT PRIMARY KEY,
-            amount INTEGER NOT NULL
+            month TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            user_code TEXT DEFAULT 'default',
+            PRIMARY KEY (month, user_code)
         )
     """)
+    # Add user_code column if not exists (migration for existing data)
+    try:
+        cur.execute("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS user_code TEXT DEFAULT 'default'")
+        cur.execute("ALTER TABLE budgets DROP CONSTRAINT IF EXISTS budgets_pkey")
+        cur.execute("ALTER TABLE budgets ADD COLUMN IF NOT EXISTS user_code TEXT DEFAULT 'default'")
+        # Recreate primary key
+        cur.execute("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'budgets_pkey_new') THEN
+                    ALTER TABLE budgets ADD CONSTRAINT budgets_pkey_new PRIMARY KEY (month, user_code);
+                END IF;
+            EXCEPTION WHEN duplicate_object THEN NULL;
+            END $$;
+        """)
+    except:
+        pass
     conn.commit()
     cur.close()
     conn.close()
 
-# ── AI Receipt Scanner (Google Gemini) ──
+def get_user_code():
+    """Extract user_code from request header or query param"""
+    return request.headers.get('X-User-Code', request.args.get('user', 'default'))
+
+# ── AI Receipt Scanner ──
 
 SCAN_PROMPT = """Bạn là trợ lý phân tích hóa đơn/chi tiêu. Hãy xem ảnh và trích xuất TẤT CẢ các khoản chi tiêu.
 
@@ -172,9 +197,10 @@ def scan_receipt():
 # SSE
 @app.route("/api/events")
 def events():
+    user_code = get_user_code()
     def stream():
         q = queue.Queue()
-        clients.append(q)
+        clients.append((user_code, q))
         try:
             while True:
                 try:
@@ -183,7 +209,10 @@ def events():
                 except queue.Empty:
                     yield ": heartbeat\n\n"
         except GeneratorExit:
-            clients.remove(q)
+            try:
+                clients.remove((user_code, q))
+            except:
+                pass
     return Response(stream(), mimetype="text/event-stream", headers={
         "Cache-Control": "no-cache",
         "X-Accel-Buffering": "no",
@@ -197,9 +226,10 @@ def index():
 
 @app.route("/api/expenses")
 def list_expenses():
+    user_code = get_user_code()
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM expenses ORDER BY date DESC, created_at DESC")
+    cur.execute("SELECT id, date, category, detail, amount FROM expenses WHERE user_code=%s ORDER BY date DESC, created_at DESC", (user_code,))
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -208,16 +238,17 @@ def list_expenses():
 @app.route("/api/expenses", methods=["POST"])
 def add_expense():
     data = request.json
+    user_code = get_user_code()
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO expenses (id, date, category, detail, amount) VALUES (%s, %s, %s, %s, %s)",
-        (data["id"], data["date"], data["category"], data.get("detail", ""), data["amount"])
+        "INSERT INTO expenses (id, date, category, detail, amount, user_code) VALUES (%s, %s, %s, %s, %s, %s)",
+        (data["id"], data["date"], data["category"], data.get("detail", ""), data["amount"], user_code)
     )
     conn.commit()
     cur.close()
     conn.close()
-    notify_clients()
+    notify_clients(user_code)
     return jsonify({"ok": True}), 201
 
 @app.route("/api/expenses/bulk", methods=["POST"])
@@ -225,52 +256,56 @@ def add_expenses_bulk():
     items = request.json.get("items", [])
     if not items:
         return jsonify({"ok": False}), 400
+    user_code = get_user_code()
     conn = get_db()
     cur = conn.cursor()
     for data in items:
         cur.execute(
-            "INSERT INTO expenses (id, date, category, detail, amount) VALUES (%s, %s, %s, %s, %s)",
-            (data["id"], data["date"], data["category"], data.get("detail", ""), data["amount"])
+            "INSERT INTO expenses (id, date, category, detail, amount, user_code) VALUES (%s, %s, %s, %s, %s, %s)",
+            (data["id"], data["date"], data["category"], data.get("detail", ""), data["amount"], user_code)
         )
     conn.commit()
     cur.close()
     conn.close()
-    notify_clients()
+    notify_clients(user_code)
     return jsonify({"ok": True, "count": len(items)}), 201
 
 @app.route("/api/expenses/<eid>", methods=["PUT"])
 def update_expense(eid):
     data = request.json
+    user_code = get_user_code()
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "UPDATE expenses SET date=%s, category=%s, detail=%s, amount=%s WHERE id=%s",
-        (data["date"], data["category"], data.get("detail", ""), data["amount"], eid)
+        "UPDATE expenses SET date=%s, category=%s, detail=%s, amount=%s WHERE id=%s AND user_code=%s",
+        (data["date"], data["category"], data.get("detail", ""), data["amount"], eid, user_code)
     )
     conn.commit()
     cur.close()
     conn.close()
-    notify_clients()
+    notify_clients(user_code)
     return jsonify({"ok": True})
 
 @app.route("/api/expenses/<eid>", methods=["DELETE"])
 def delete_expense(eid):
+    user_code = get_user_code()
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("DELETE FROM expenses WHERE id=%s", (eid,))
+    cur.execute("DELETE FROM expenses WHERE id=%s AND user_code=%s", (eid, user_code))
     conn.commit()
     cur.close()
     conn.close()
-    notify_clients()
+    notify_clients(user_code)
     return jsonify({"ok": True})
 
 # ── Budgets API ──
 
 @app.route("/api/budgets")
 def list_budgets():
+    user_code = get_user_code()
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT * FROM budgets")
+    cur.execute("SELECT month, amount FROM budgets WHERE user_code=%s", (user_code,))
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -279,16 +314,18 @@ def list_budgets():
 @app.route("/api/budgets", methods=["POST"])
 def set_budget():
     data = request.json
+    user_code = get_user_code()
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO budgets (month, amount) VALUES (%s, %s) ON CONFLICT (month) DO UPDATE SET amount=%s",
-        (data["month"], data["amount"], data["amount"])
+        """INSERT INTO budgets (month, amount, user_code) VALUES (%s, %s, %s)
+           ON CONFLICT (month, user_code) DO UPDATE SET amount=%s""",
+        (data["month"], data["amount"], user_code, data["amount"])
     )
     conn.commit()
     cur.close()
     conn.close()
-    notify_clients()
+    notify_clients(user_code)
     return jsonify({"ok": True})
 
 if __name__ == "__main__":
