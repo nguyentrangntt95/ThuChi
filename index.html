@@ -222,7 +222,7 @@ const html = htm.bind(h);
 const load = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) || d; } catch { return d; } };
 const save = (k, v) => localStorage.setItem(k, JSON.stringify(v));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const getUserCode = () => load('tc-user', 'default');
+const getUserCode = () => load('tc-user', '');
 const setUserCode = (code) => save('tc-user', code);
 const apiCall = async (path, opts) => {
   const uc = getUserCode();
@@ -1218,7 +1218,7 @@ function LoginScreen({ onLogin }) {
           disabled=${!code.trim()}>
           Đăng nhập
         </button>
-        <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-4">Mỗi mã là một tài khoản riêng biệt</p>
+        <p class="text-xs text-zinc-400 dark:text-zinc-500 mt-4">Cùng mã = cùng dữ liệu trên mọi thiết bị</p>
       </div>
     </div>
   `;
@@ -1246,36 +1246,15 @@ function App() {
     setLoading(true);
   };
 
-  const [showLogin, setShowLogin] = useState(false);
-  const [renaming, setRenaming] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [renameErr, setRenameErr] = useState('');
-
   const handleLogout = () => {
-    setShowLogin(true);
+    setUC('');
+    save('tc-user', '');
+    setExpenses([]);
+    setBudgets({});
   };
 
-  const handleRename = async () => {
-    const trimmed = newName.trim();
-    if (!trimmed || trimmed === userCode) return;
-    setRenameErr('');
-    try {
-      const res = await fetch('/api/rename-user', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ old: userCode, new: trimmed })
-      });
-      const data = await res.json();
-      if (!res.ok) { setRenameErr(data.error || 'Lỗi'); return; }
-      setUC(trimmed);
-      save('tc-user', trimmed);
-      setRenaming(false);
-      fetchData();
-    } catch (e) { setRenameErr('Lỗi kết nối'); }
-  };
-
-  if (showLogin) {
-    return html`<${LoginScreen} onLogin=${(code) => { handleLogin(code); setShowLogin(false); }} />`;
+  if (!userCode) {
+    return html`<${LoginScreen} onLogin=${handleLogin} />`;
   }
 
   const fetchData = useCallback(async () => {
@@ -1400,24 +1379,10 @@ function App() {
         <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div class="flex items-center gap-2">
             <h1 class="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Thu Chi</h1>
-            ${renaming ? html`
-              <div class="flex items-center gap-1">
-                <input value=${newName} onInput=${e => setNewName(e.target.value)}
-                  class="w-20 px-2 py-0.5 text-xs rounded-full border border-emerald-300 dark:border-emerald-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  placeholder="Tên mới" autofocus onKeyDown=${e => e.key === 'Enter' && handleRename()} />
-                <button onClick=${handleRename} class="text-xs text-emerald-600 font-medium">OK</button>
-                <button onClick=${() => { setRenaming(false); setRenameErr(''); }} class="text-xs text-zinc-400">Hủy</button>
-              </div>
-              ${renameErr && html`<span class="text-xs text-red-500">${renameErr}</span>`}
-            ` : html`
-              <button onClick=${() => { setNewName(userCode === 'default' ? '' : userCode); setRenaming(true); }}
-                class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-colors cursor-pointer" title="Đổi tên">
-                ${userCode}
-              </button>
-            `}
+            <span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium">${userCode}</span>
           </div>
           <div class="flex items-center gap-1">
-            <button onClick=${handleLogout} class="p-2 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="Đăng xuất">
+            <button onClick=${handleLogout} class="p-2 rounded-lg text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors" title="Đổi tài khoản">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
             </button>
             <button onClick=${() => setShowQR(true)} class="p-2 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors" title="QR Code">

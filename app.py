@@ -328,8 +328,9 @@ def set_budget():
     notify_clients(user_code)
     return jsonify({"ok": True})
 
-@app.route("/api/rename-user", methods=["POST"])
-def rename_user():
+@app.route("/api/migrate-user", methods=["POST"])
+def migrate_user():
+    """Move all data from one user_code to another"""
     data = request.json
     old_code = data.get("old", "").strip()
     new_code = data.get("new", "").strip()
@@ -337,18 +338,13 @@ def rename_user():
         return jsonify({"error": "Invalid codes"}), 400
     conn = get_db()
     cur = conn.cursor()
-    # Check if new_code already has data
-    cur.execute("SELECT COUNT(*) as cnt FROM expenses WHERE user_code=%s", (new_code,))
-    if cur.fetchone()["cnt"] > 0:
-        cur.close()
-        conn.close()
-        return jsonify({"error": "Mã này đã có dữ liệu"}), 409
     cur.execute("UPDATE expenses SET user_code=%s WHERE user_code=%s", (new_code, old_code))
     cur.execute("UPDATE budgets SET user_code=%s WHERE user_code=%s", (new_code, old_code))
     conn.commit()
+    moved_expenses = cur.rowcount
     cur.close()
     conn.close()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "moved": moved_expenses})
 
 if __name__ == "__main__":
     init_db()
