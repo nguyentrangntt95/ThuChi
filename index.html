@@ -488,7 +488,7 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
   `;
 }
 
-function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, dateFrom, dateTo, fullMonth = true }) {
+function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true }) {
   const budget = rawBudget || 15000000;
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState('');
@@ -499,30 +499,6 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
   const monthLabel = monthCount > 1
     ? monthCount + ' tháng'
     : (month.slice(0, 4) === new Date().getFullYear().toString() ? 'Tháng ' + parseInt(month.slice(5)) : month);
-
-  // Calculate days in range for daily/weekly breakdown
-  const totalDays = useMemo(() => {
-    if (!dateFrom || !dateTo) return 30;
-    const d1 = new Date(dateFrom + 'T00:00:00');
-    const d2 = new Date(dateTo + 'T00:00:00');
-    return Math.max(1, Math.round((d2 - d1) / 86400000) + 1);
-  }, [dateFrom, dateTo]);
-  const totalWeeks = Math.max(1, totalDays / 7);
-  const budgetPerDay = budget > 0 ? Math.round(budget / totalDays) : 0;
-  const budgetPerWeek = budget > 0 ? Math.round(budget / totalWeeks) : 0;
-  const spentPerDay = totalDays > 0 ? Math.round(total / totalDays) : 0;
-  const spentPerWeek = totalWeeks > 0 ? Math.round(total / totalWeeks) : 0;
-
-  // Days elapsed and remaining
-  const today = new Date().toISOString().slice(0, 10);
-  const daysElapsed = useMemo(() => {
-    if (!dateFrom) return totalDays;
-    const d1 = new Date(dateFrom + 'T00:00:00');
-    const d2 = new Date(Math.min(new Date(today + 'T00:00:00'), new Date(dateTo + 'T00:00:00')));
-    return Math.max(1, Math.round((d2 - d1) / 86400000) + 1);
-  }, [dateFrom, dateTo, today]);
-  const daysLeft = Math.max(0, totalDays - daysElapsed);
-  const dailyBudgetLeft = daysLeft > 0 && remain > 0 ? Math.round(remain / daysLeft) : 0;
 
   const handleSave = () => {
     const n = parseInt(val.replace(/\D/g, ''));
@@ -567,25 +543,6 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
         <div class="h-full rounded-full transition-all duration-500"
           style="width:${pct}%;background:${over ? '#ef4444' : warn ? '#f59e0b' : '#10b981'}" />
       </div>
-      ${budget > 0 && html`
-        <div class="grid grid-cols-3 gap-2 mt-3 pt-3" style="border-top:1px solid ${dark ? '#334155' : '#f4f4f5'}">
-          <div class="text-center">
-            <p class="text-xs font-medium" style="color:${dark ? '#94a3b8' : '#71717a'}">Ngày</p>
-            <p class="text-sm font-bold" style="color:${spentPerDay > budgetPerDay ? '#ef4444' : dark ? '#e2e8f0' : '#27272a'}">${fmtShort(spentPerDay)}</p>
-            <p class="text-xs" style="color:${dark ? '#64748b' : '#a1a1aa'}">/ ${fmtShort(budgetPerDay)}</p>
-          </div>
-          <div class="text-center">
-            <p class="text-xs font-medium" style="color:${dark ? '#94a3b8' : '#71717a'}">Tuần</p>
-            <p class="text-sm font-bold" style="color:${spentPerWeek > budgetPerWeek ? '#ef4444' : dark ? '#e2e8f0' : '#27272a'}">${fmtShort(spentPerWeek)}</p>
-            <p class="text-xs" style="color:${dark ? '#64748b' : '#a1a1aa'}">/ ${fmtShort(budgetPerWeek)}</p>
-          </div>
-          <div class="text-center">
-            <p class="text-xs font-medium" style="color:${dark ? '#94a3b8' : '#71717a'}">Còn lại/ngày</p>
-            <p class="text-sm font-bold" style="color:${dailyBudgetLeft <= 0 ? '#ef4444' : '#10b981'}">${daysLeft > 0 ? fmtShort(dailyBudgetLeft) : '-'}</p>
-            <p class="text-xs" style="color:${dark ? '#64748b' : '#a1a1aa'}">${daysLeft} ngày nữa</p>
-          </div>
-        </div>
-      `}
     </div>
   `;
 }
@@ -1770,7 +1727,7 @@ function App() {
 
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} />
-        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} month=${budgetMonth} dark=${dark} monthCount=${budgetInfo.months} dateFrom=${dateFrom} dateTo=${dateTo} fullMonth=${budgetInfo.fullMonth} />
+        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} month=${budgetMonth} dark=${dark} monthCount=${budgetInfo.months} fullMonth=${budgetInfo.fullMonth} />
         ${visibleDups.length > 0 && html`
           <div class="px-4 mt-3 space-y-2">
             ${visibleDups.map(group => {
