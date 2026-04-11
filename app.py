@@ -59,9 +59,19 @@ def init_db():
             created_at TIMESTAMP DEFAULT NOW()
         )
     """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            emoji TEXT DEFAULT '',
+            user_code TEXT DEFAULT 'default',
+            created_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
     # Add columns if not exists (migration)
     try:
         cur.execute("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS user_code TEXT DEFAULT 'default'")
+        cur.execute("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''")
         cur.execute("ALTER TABLE budgets DROP CONSTRAINT IF EXISTS budgets_pkey")
         cur.execute("ALTER TABLE budgets ADD COLUMN IF NOT EXISTS user_code TEXT DEFAULT 'default'")
         cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS token TEXT")
@@ -155,7 +165,7 @@ Nếu không đọc được gì hữu ích, trả về: []"""
 # Step 2: Categorize extracted items using AI + user history
 CATEGORIZE_PROMPT = """Bạn là trợ lý phân loại chi tiêu. Hãy phân loại từng khoản chi tiêu dưới đây vào đúng category.
 
-CÁC CATEGORY HỢP LỆ: food, transport, shopping, entertainment, bills, health, education, other
+CÁC CATEGORY HỢP LỆ: food, transport, shopping, entertainment, bills, health, education, savings, other
 
 QUY TẮC PHÂN LOẠI:
 - MOCA, GrabFood, GrabMart, ShopeeFood, Baemin, tên nhà hàng/quán ăn/cafe (Starbucks, Highland, Phúc Long, KFC, McDonald's, Jollibee, Pizza Hut, Lotteria, The Coffee House, Cộng Cà Phê, trà sữa, cơm, phở, bún, bánh mì...) → food
@@ -165,6 +175,7 @@ QUY TẮC PHÂN LOẠI:
 - Tiền điện, nước, internet, điện thoại, thuê nhà → bills
 - Bệnh viện, thuốc, khám, nha khoa → health
 - Học phí, sách, khóa học, Udemy, Coursera → education
+- Gửi tiết kiệm, đầu tư, tích lũy, để dành → savings
 - Không rõ → other
 
 {history_rules}
@@ -324,7 +335,7 @@ def step2_categorize(items, user_code=None):
         if not isinstance(categories, list):
             categories = [categories]
 
-        valid_cats = {'food','transport','shopping','entertainment','bills','health','education','other'}
+        valid_cats = {'food','transport','shopping','entertainment','bills','health','education','savings','other'}
         cat_map = {}
         for c in categories:
             idx = c.get('index', -1)
@@ -495,7 +506,7 @@ def list_expenses():
     user_code = get_user_code()
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT id, date, category, detail, amount FROM expenses WHERE user_code=%s ORDER BY date DESC, created_at DESC", (user_code,))
+    cur.execute("SELECT id, date, category, detail, amount, COALESCE(project_id, '') as project_id FROM expenses WHERE user_code=%s ORDER BY date DESC, created_at DESC", (user_code,))
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -509,8 +520,8 @@ def add_expense():
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO expenses (id, date, category, detail, amount, user_code) VALUES (%s, %s, %s, %s, %s, %s)",
-        (data["id"], data["date"], data["category"], data.get("detail", ""), data["amount"], user_code)
+        "INSERT INTO expenses (id, date, category, detail, amount, user_code, project_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        (data["id"], data["date"], data["category"], data.get("detail", ""), data["amount"], user_code, data.get("project_id", ""))
     )
     conn.commit()
     cur.close()
@@ -529,8 +540,8 @@ def add_expenses_bulk():
     cur = conn.cursor()
     for data in items:
         cur.execute(
-            "INSERT INTO expenses (id, date, category, detail, amount, user_code) VALUES (%s, %s, %s, %s, %s, %s)",
-            (data["id"], data["date"], data["category"], data.get("detail", ""), data["amount"], user_code)
+            "INSERT INTO expenses (id, date, category, detail, amount, user_code, project_id) VALUES (%s, %s, %s, %s, %s, %s, %s)",
+            (data["id"], data["date"], data["category"], data.get("detail", ""), data["amount"], user_code, data.get("project_id", ""))
         )
     conn.commit()
     cur.close()
@@ -546,8 +557,8 @@ def update_expense(eid):
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "UPDATE expenses SET date=%s, category=%s, detail=%s, amount=%s WHERE id=%s AND user_code=%s",
-        (data["date"], data["category"], data.get("detail", ""), data["amount"], eid, user_code)
+        "UPDATE expenses SET date=%s, category=%s, detail=%s, amount=%s, project_id=%s WHERE id=%s AND user_code=%s",
+        (data["date"], data["category"], data.get("detail", ""), data["amount"], data.get("project_id", ""), eid, user_code)
     )
     conn.commit()
     cur.close()
@@ -592,6 +603,52 @@ def set_budget():
            ON CONFLICT (month, user_code) DO UPDATE SET amount=%s""",
         (data["month"], data["amount"], user_code, data["amount"])
     )
+    conn.commit()
+    cur.close()
+    conn.close()
+    notify_clients(user_code)
+    return jsonify({"ok": True})
+
+# ── Projects ──
+
+@app.route("/api/projects")
+@require_auth
+def list_projects():
+    user_code = get_user_code()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT id, name, emoji FROM projects WHERE user_code=%s ORDER BY created_at DESC", (user_code,))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return jsonify(rows)
+
+@app.route("/api/projects", methods=["POST"])
+@require_auth
+def add_project():
+    data = request.json
+    user_code = get_user_code()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO projects (id, name, emoji, user_code) VALUES (%s, %s, %s, %s)",
+        (data["id"], data["name"], data.get("emoji", ""), user_code)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    notify_clients(user_code)
+    return jsonify({"ok": True}), 201
+
+@app.route("/api/projects/<pid>", methods=["DELETE"])
+@require_auth
+def delete_project(pid):
+    user_code = get_user_code()
+    conn = get_db()
+    cur = conn.cursor()
+    # Remove project_id from expenses that use this project
+    cur.execute("UPDATE expenses SET project_id='' WHERE project_id=%s AND user_code=%s", (pid, user_code))
+    cur.execute("DELETE FROM projects WHERE id=%s AND user_code=%s", (pid, user_code))
     conn.commit()
     cur.close()
     conn.close()
