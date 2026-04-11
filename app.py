@@ -9,7 +9,7 @@ import psycopg2
 import requests as http_requests
 from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, send_file, Response
-from datetime import date
+from datetime import date, timedelta
 from functools import wraps
 app = Flask(__name__)
 
@@ -116,9 +116,12 @@ def get_user_code():
     """Get user_code from authenticated request"""
     return getattr(request, '_user_code', 'default')
 
-# ── AI Receipt Scanner ──
+# ── AI Receipt Scanner (3-step pipeline) ──
 
-SCAN_PROMPT = """Bạn là trợ lý phân tích hóa đơn/chi tiêu. Hãy xem ảnh và trích xuất TẤT CẢ các khoản chi tiêu.
+# Step 1: Pure extraction - OCR text from image
+EXTRACT_PROMPT = """Bạn là trợ lý đọc ảnh hóa đơn/chi tiêu. Hãy xem ảnh và trích xuất TẤT CẢ các khoản chi tiêu dưới dạng text.
+
+HÔM NAY là ngày {today} (năm {year}).
 
 Nếu ảnh là 1 hóa đơn/bill duy nhất → trả về 1 khoản.
 Nếu ảnh là sao kê ngân hàng, lịch sử giao dịch, hoặc có nhiều khoản riêng biệt → trả về NHIỀU khoản, mỗi giao dịch 1 khoản.
@@ -132,27 +135,45 @@ QUAN TRỌNG - PHÂN BIỆT TIỀN VÀO VÀ TIỀN RA:
 - Nếu ghi "nhận tiền", "chuyển đến", "hoàn tiền", "tiền thưởng", "lương" → BỎ QUA.
 - Nếu ghi "thanh toán", "chuyển tiền", "mua", "chi" → LẤY.
 
-QUY TẮC PHÂN LOẠI (BẮT BUỘC tuân theo):
-- MOCA, GrabFood, GrabMart, ShopeeFood, Baemin → food (ăn uống)
-- Tên nhà hàng/quán ăn/cafe: Starbucks, Highland, Phúc Long, KFC, McDonald's, Jollibee, Pizza Hut, Lotteria, The Coffee House, Cộng Cà Phê, trà sữa, cơm, phở, bún, bánh mì... → food (ăn uống)
-- Shopee, Lazada, Tiki, Sendo, TikTok Shop → shopping (mua sắm)
-- Grab (đi xe), GrabBike, GrabCar, Be, Xanh SM, taxi, xe ôm → transport (di chuyển)
-- Netflix, Spotify, YouTube Premium, game, rạp phim, CGV, Lotte Cinema → entertainment (giải trí)
-- Tiền điện, nước, internet, điện thoại, thuê nhà → bills (hóa đơn)
-- Bệnh viện, thuốc, khám, nha khoa → health (sức khỏe)
-- Học phí, sách, khóa học, Udemy, Coursera → education (học tập)
+QUAN TRỌNG VỀ NGÀY:
+- Nếu ảnh ghi "hôm nay" hoặc "today" → dùng ngày {today}.
+- Nếu ảnh ghi "hôm qua" hoặc "yesterday" → dùng ngày {yesterday}.
+- Nếu không rõ năm → dùng năm {year}.
+- Nếu không có ngày nào → dùng "{today}".
 
-Với mỗi khoản, xác định:
-- "date": ngày giao dịch (format YYYY-MM-DD). Nếu không rõ năm thì dùng năm {year}. Nếu không rõ ngày thì dùng "{today}".
-- "category": PHẢI là 1 trong: food, transport, shopping, entertainment, bills, health, education, other
-- "detail": mô tả ngắn gọn bằng tiếng Việt (VD: "Grab đi làm", "Cà phê Highland", "Tiền điện tháng 3")
+Với mỗi khoản, trích xuất:
+- "date": ngày giao dịch (format YYYY-MM-DD)
+- "detail": tên khoản chi/mô tả GỐC từ ảnh, giữ nguyên tên cửa hàng/dịch vụ (VD: "Grab đi làm", "Cà phê Highland", "Tiền điện tháng 3")
 - "amount": số tiền GỐC trên hóa đơn (số nguyên, KHÔNG có dấu chấm/phẩy)
-- "currency": đơn vị tiền tệ gốc. Nếu là VND/đồng thì ghi "VND". Nếu là USD/$ thì ghi "USD". Nếu là EUR/€ thì ghi "EUR". Mặc định "VND".
+- "currency": đơn vị tiền tệ gốc. Nếu là VND/đồng thì ghi "VND". Nếu là USD/$ thì ghi "USD". Mặc định "VND".
 
-CHỈ trả về JSON array, KHÔNG có text nào khác:
-[{{"date":"2026-03-29","category":"food","detail":"Cà phê Highland","amount":45000,"currency":"VND"}}]
+KHÔNG cần phân loại category ở bước này. CHỈ trả về JSON array:
+[{{"date":"2026-03-29","detail":"Cà phê Highland","amount":45000,"currency":"VND"}}]
 
 Nếu không đọc được gì hữu ích, trả về: []"""
+
+# Step 2: Categorize extracted items using AI + user history
+CATEGORIZE_PROMPT = """Bạn là trợ lý phân loại chi tiêu. Hãy phân loại từng khoản chi tiêu dưới đây vào đúng category.
+
+CÁC CATEGORY HỢP LỆ: food, transport, shopping, entertainment, bills, health, education, other
+
+QUY TẮC PHÂN LOẠI:
+- MOCA, GrabFood, GrabMart, ShopeeFood, Baemin, tên nhà hàng/quán ăn/cafe (Starbucks, Highland, Phúc Long, KFC, McDonald's, Jollibee, Pizza Hut, Lotteria, The Coffee House, Cộng Cà Phê, trà sữa, cơm, phở, bún, bánh mì...) → food
+- Shopee, Lazada, Tiki, Sendo, TikTok Shop → shopping
+- Grab (đi xe), GrabBike, GrabCar, Be, Xanh SM, taxi, xe ôm → transport
+- Netflix, Spotify, YouTube Premium, game, rạp phim, CGV, Lotte Cinema → entertainment
+- Tiền điện, nước, internet, điện thoại, thuê nhà → bills
+- Bệnh viện, thuốc, khám, nha khoa → health
+- Học phí, sách, khóa học, Udemy, Coursera → education
+- Không rõ → other
+
+{history_rules}
+
+DANH SÁCH CẦN PHÂN LOẠI:
+{items_text}
+
+Trả về JSON array với category được thêm vào mỗi khoản. CHỈ trả về JSON, KHÔNG text khác:
+[{{"index":0,"category":"food"}},{{"index":1,"category":"transport"}}]"""
 
 EXCHANGE_RATES = {
     'USD': 25500, 'EUR': 27500, 'GBP': 32000, 'JPY': 170,
@@ -175,7 +196,6 @@ def get_user_category_patterns(user_code):
         rows = cur.fetchall()
         cur.close()
         conn.close()
-        # Deduplicate: keep the most frequent category per detail
         patterns = {}
         for r in rows:
             d = r['detail'].strip()
@@ -185,21 +205,58 @@ def get_user_category_patterns(user_code):
     except:
         return {}
 
-def scan_with_groq(image_bytes, content_type, user_code=None):
+def find_potential_duplicates(user_code, items):
+    """Step 3: Find potential duplicates by same date + similar amount"""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        dates = list(set(it['date'] for it in items))
+        if not dates:
+            return []
+        placeholders = ','.join(['%s'] * len(dates))
+        cur.execute(f"""
+            SELECT id, date, detail, amount FROM expenses
+            WHERE user_code=%s AND date IN ({placeholders})
+        """, [user_code] + dates)
+        existing = cur.fetchall()
+        cur.close()
+        conn.close()
+
+        duplicates = []
+        for i, item in enumerate(items):
+            for ex in existing:
+                if ex['date'] == item['date'] and ex['amount'] == item['amount']:
+                    duplicates.append({
+                        'scan_index': i,
+                        'existing_id': ex['id'],
+                        'existing_detail': ex['detail'],
+                        'match_reason': 'same_date_amount'
+                    })
+                    break
+        return duplicates
+    except:
+        return []
+
+def _call_groq(payload):
+    """Helper to call Groq API"""
     api_key = os.environ.get("GROQ_API_KEY", "")
     url = "https://api.groq.com/openai/v1/chat/completions"
+    resp = http_requests.post(url, json=payload, headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
+    resp.raise_for_status()
+    data = resp.json()
+    text = data["choices"][0]["message"]["content"].strip()
+    if text.startswith("```"):
+        text = re.sub(r'^```\w*\n?', '', text)
+        text = re.sub(r'\n?```$', '', text)
+    return text
 
+def step1_extract(image_bytes, content_type):
+    """Step 1: Extract all items from image as raw text/data"""
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
     today_str = date.today().isoformat()
+    yesterday_str = (date.today() - timedelta(days=1)).isoformat()
     year = date.today().year
-    prompt = SCAN_PROMPT.format(today=today_str, year=year)
-
-    # Add user's learned category patterns
-    if user_code:
-        patterns = get_user_category_patterns(user_code)
-        if patterns:
-            lines = [f'  "{d}" → {c}' for d, c in list(patterns.items())[:30]]
-            prompt += "\n\nQUY TẮC TỪ LỊCH SỬ NGƯỜI DÙNG (ƯU TIÊN CAO NHẤT):\n" + "\n".join(lines)
+    prompt = EXTRACT_PROMPT.format(today=today_str, yesterday=yesterday_str, year=year)
 
     payload = {
         "model": "meta-llama/llama-4-scout-17b-16e-instruct",
@@ -210,25 +267,15 @@ def scan_with_groq(image_bytes, content_type, user_code=None):
         "temperature": 0.1, "max_tokens": 2000
     }
 
-    resp = http_requests.post(url, json=payload, headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
-    resp.raise_for_status()
-    data = resp.json()
-
-    text = data["choices"][0]["message"]["content"].strip()
-    if text.startswith("```"):
-        text = re.sub(r'^```\w*\n?', '', text)
-        text = re.sub(r'\n?```$', '', text)
-
+    text = _call_groq(payload)
     items = json.loads(text)
     if not isinstance(items, list):
         items = [items]
 
-    valid_cats = {'food','transport','shopping','entertainment','bills','health','education','other'}
+    # Validate and clean extracted items
+    today_str = date.today().isoformat()
     result = []
     for item in items:
-        cat = item.get('category', 'other')
-        if cat not in valid_cats:
-            cat = 'other'
         amt = int(item.get('amount', 0))
         if amt <= 0:
             continue
@@ -236,7 +283,6 @@ def scan_with_groq(image_bytes, content_type, user_code=None):
         detail = item.get('detail', '')[:80]
         entry = {
             'date': item.get('date', today_str),
-            'category': cat,
             'detail': detail,
             'amount': amt,
         }
@@ -247,6 +293,69 @@ def scan_with_groq(image_bytes, content_type, user_code=None):
             entry['amount'] = int(amt * EXCHANGE_RATES[currency])
         result.append(entry)
     return result
+
+def step2_categorize(items, user_code=None):
+    """Step 2: Categorize extracted items using AI + user history"""
+    if not items:
+        return items
+
+    # Build history rules
+    history_rules = ""
+    if user_code:
+        patterns = get_user_category_patterns(user_code)
+        if patterns:
+            lines = [f'  "{d}" → {c}' for d, c in list(patterns.items())[:30]]
+            history_rules = "QUY TẮC TỪ LỊCH SỬ NGƯỜI DÙNG (ƯU TIÊN CAO NHẤT):\n" + "\n".join(lines)
+
+    # Build items text
+    items_text = "\n".join([f'{i}. "{it["detail"]}" - {it["amount"]}đ ({it["date"]})' for i, it in enumerate(items)])
+
+    prompt = CATEGORIZE_PROMPT.format(history_rules=history_rules, items_text=items_text)
+
+    payload = {
+        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1, "max_tokens": 1000
+    }
+
+    try:
+        text = _call_groq(payload)
+        categories = json.loads(text)
+        if not isinstance(categories, list):
+            categories = [categories]
+
+        valid_cats = {'food','transport','shopping','entertainment','bills','health','education','other'}
+        cat_map = {}
+        for c in categories:
+            idx = c.get('index', -1)
+            cat = c.get('category', 'other')
+            if cat not in valid_cats:
+                cat = 'other'
+            cat_map[idx] = cat
+
+        for i, item in enumerate(items):
+            item['category'] = cat_map.get(i, 'other')
+    except:
+        # Fallback: set all to 'other' if categorization fails
+        for item in items:
+            item['category'] = 'other'
+
+    return items
+
+def scan_with_groq(image_bytes, content_type, user_code=None):
+    """Full 3-step pipeline: extract → categorize → duplicate detect"""
+    # Step 1: Extract items from image
+    items = step1_extract(image_bytes, content_type)
+
+    # Step 2: Categorize using AI + user history
+    items = step2_categorize(items, user_code)
+
+    # Step 3: Duplicate detection (returned separately)
+    duplicates = []
+    if user_code and items:
+        duplicates = find_potential_duplicates(user_code, items)
+
+    return items, duplicates
 
 # ── Public routes (no auth) ──
 
@@ -351,10 +460,10 @@ def scan_receipt():
     image_bytes = file.read()
     content_type = file.content_type or 'image/jpeg'
     try:
-        items = scan_with_groq(image_bytes, content_type, user_code=get_user_code())
-        return jsonify({"items": items})
+        items, duplicates = scan_with_groq(image_bytes, content_type, user_code=get_user_code())
+        return jsonify({"items": items, "duplicates": duplicates})
     except Exception as e:
-        return jsonify({"error": str(e), "items": []}), 500
+        return jsonify({"error": str(e), "items": [], "duplicates": []}), 500
 
 @app.route("/api/events")
 @require_auth

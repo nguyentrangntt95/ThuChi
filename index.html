@@ -269,7 +269,7 @@ async function scanImage(file) {
   if (token) headers['Authorization'] = 'Bearer ' + token;
   const res = await fetch('/api/scan', { method: 'POST', body: formData, headers });
   const data = await res.json();
-  return data.items || [];
+  return { items: data.items || [], duplicates: data.duplicates || [] };
 }
 
 const CATEGORIES = [
@@ -488,7 +488,7 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
   `;
 }
 
-function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1 }) {
+function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, dateFrom, dateTo, fullMonth = true }) {
   const budget = rawBudget || 15000000;
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState('');
@@ -499,6 +499,30 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
   const monthLabel = monthCount > 1
     ? monthCount + ' tháng'
     : (month.slice(0, 4) === new Date().getFullYear().toString() ? 'Tháng ' + parseInt(month.slice(5)) : month);
+
+  // Calculate days in range for daily/weekly breakdown
+  const totalDays = useMemo(() => {
+    if (!dateFrom || !dateTo) return 30;
+    const d1 = new Date(dateFrom + 'T00:00:00');
+    const d2 = new Date(dateTo + 'T00:00:00');
+    return Math.max(1, Math.round((d2 - d1) / 86400000) + 1);
+  }, [dateFrom, dateTo]);
+  const totalWeeks = Math.max(1, totalDays / 7);
+  const budgetPerDay = budget > 0 ? Math.round(budget / totalDays) : 0;
+  const budgetPerWeek = budget > 0 ? Math.round(budget / totalWeeks) : 0;
+  const spentPerDay = totalDays > 0 ? Math.round(total / totalDays) : 0;
+  const spentPerWeek = totalWeeks > 0 ? Math.round(total / totalWeeks) : 0;
+
+  // Days elapsed and remaining
+  const today = new Date().toISOString().slice(0, 10);
+  const daysElapsed = useMemo(() => {
+    if (!dateFrom) return totalDays;
+    const d1 = new Date(dateFrom + 'T00:00:00');
+    const d2 = new Date(Math.min(new Date(today + 'T00:00:00'), new Date(dateTo + 'T00:00:00')));
+    return Math.max(1, Math.round((d2 - d1) / 86400000) + 1);
+  }, [dateFrom, dateTo, today]);
+  const daysLeft = Math.max(0, totalDays - daysElapsed);
+  const dailyBudgetLeft = daysLeft > 0 && remain > 0 ? Math.round(remain / daysLeft) : 0;
 
   const handleSave = () => {
     const n = parseInt(val.replace(/\D/g, ''));
@@ -511,7 +535,7 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
       <div class="flex items-center justify-between mb-2">
         <span class="text-sm font-semibold" style="color:${dark ? '#f1f5f9' : '#27272a'}">${monthLabel}</span>
         ${!editing ? html`
-          ${monthCount <= 1 && html`<button onClick=${() => { setVal(rawBudget > 0 ? rawBudget.toString() : ''); setEditing(true); }}
+          ${monthCount <= 1 && fullMonth && html`<button onClick=${() => { setVal(rawBudget > 0 ? rawBudget.toString() : ''); setEditing(true); }}
             class="text-xs px-2.5 py-1 rounded-lg hover:opacity-80 transition-colors"
             style="background:${dark ? '#334155' : '#f4f4f5'};color:${dark ? '#94a3b8' : '#71717a'}">
             Sửa ngân sách
@@ -543,6 +567,25 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
         <div class="h-full rounded-full transition-all duration-500"
           style="width:${pct}%;background:${over ? '#ef4444' : warn ? '#f59e0b' : '#10b981'}" />
       </div>
+      ${budget > 0 && html`
+        <div class="grid grid-cols-3 gap-2 mt-3 pt-3" style="border-top:1px solid ${dark ? '#334155' : '#f4f4f5'}">
+          <div class="text-center">
+            <p class="text-xs font-medium" style="color:${dark ? '#94a3b8' : '#71717a'}">Ngày</p>
+            <p class="text-sm font-bold" style="color:${spentPerDay > budgetPerDay ? '#ef4444' : dark ? '#e2e8f0' : '#27272a'}">${fmtShort(spentPerDay)}</p>
+            <p class="text-xs" style="color:${dark ? '#64748b' : '#a1a1aa'}">/ ${fmtShort(budgetPerDay)}</p>
+          </div>
+          <div class="text-center">
+            <p class="text-xs font-medium" style="color:${dark ? '#94a3b8' : '#71717a'}">Tuần</p>
+            <p class="text-sm font-bold" style="color:${spentPerWeek > budgetPerWeek ? '#ef4444' : dark ? '#e2e8f0' : '#27272a'}">${fmtShort(spentPerWeek)}</p>
+            <p class="text-xs" style="color:${dark ? '#64748b' : '#a1a1aa'}">/ ${fmtShort(budgetPerWeek)}</p>
+          </div>
+          <div class="text-center">
+            <p class="text-xs font-medium" style="color:${dark ? '#94a3b8' : '#71717a'}">Còn lại/ngày</p>
+            <p class="text-sm font-bold" style="color:${dailyBudgetLeft <= 0 ? '#ef4444' : '#10b981'}">${daysLeft > 0 ? fmtShort(dailyBudgetLeft) : '-'}</p>
+            <p class="text-xs" style="color:${dark ? '#64748b' : '#a1a1aa'}">${daysLeft} ngày nữa</p>
+          </div>
+        </div>
+      `}
     </div>
   `;
 }
@@ -872,22 +915,105 @@ function WeekdayChart({ expenses }) {
   `;
 }
 
-function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit }) {
+function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo }) {
+  const insights = useMemo(() => {
+    if (rangeExpenses.length === 0) return [];
+    const result = [];
+    const total = rangeExpenses.reduce((s, e) => s + e.amount, 0);
+
+    // 1. Biggest spending category
+    const catTotals = {};
+    rangeExpenses.forEach(e => { catTotals[e.category] = (catTotals[e.category] || 0) + e.amount; });
+    const topCat = Object.entries(catTotals).sort((a,b) => b[1] - a[1])[0];
+    if (topCat) {
+      const cat = catMap[topCat[0]] || catMap.other;
+      const pct = Math.round(topCat[1] / total * 100);
+      result.push({ icon: cat.emoji, text: cat.name + ' chiếm ' + pct + '% chi tiêu (' + fmtShort(topCat[1]) + ')', color: pct > 50 ? '#ef4444' : '#f59e0b' });
+    }
+
+    // 2. Compare with previous period
+    const fromD = new Date(dateFrom + 'T00:00:00');
+    const toD = new Date(dateTo + 'T00:00:00');
+    const rangeDays = Math.round((toD - fromD) / 86400000) + 1;
+    const prevFrom = new Date(fromD);
+    prevFrom.setDate(prevFrom.getDate() - rangeDays);
+    const prevFromStr = prevFrom.toISOString().slice(0, 10);
+    const prevToStr = dateFrom;
+    const prevExpenses = allExpenses.filter(e => e.date >= prevFromStr && e.date < prevToStr);
+    const prevTotal = prevExpenses.reduce((s, e) => s + e.amount, 0);
+    if (prevTotal > 0) {
+      const diff = total - prevTotal;
+      const diffPct = Math.round(Math.abs(diff) / prevTotal * 100);
+      if (diff > 0) {
+        result.push({ icon: '\u{1F4C8}', text: 'Tăng ' + diffPct + '% so với kỳ trước (+' + fmtShort(diff) + ')', color: '#ef4444' });
+      } else if (diff < 0) {
+        result.push({ icon: '\u{1F4C9}', text: 'Giảm ' + diffPct + '% so với kỳ trước (-' + fmtShort(Math.abs(diff)) + ')', color: '#10b981' });
+      } else {
+        result.push({ icon: '\u{1F7F0}', text: 'Chi tiêu bằng kỳ trước', color: '#64748b' });
+      }
+    }
+
+    // 3. Most expensive day
+    const byDate = {};
+    rangeExpenses.forEach(e => { byDate[e.date] = (byDate[e.date] || 0) + e.amount; });
+    const dates = Object.entries(byDate).sort((a,b) => b[1] - a[1]);
+    if (dates.length > 0) {
+      const [maxDate, maxAmt] = dates[0];
+      const d = new Date(maxDate + 'T00:00:00');
+      const dayNames = ['CN','T2','T3','T4','T5','T6','T7'];
+      result.push({ icon: '\u{1F525}', text: 'Ngày chi nhiều nhất: ' + d.getDate() + '/' + (d.getMonth()+1) + ' (' + dayNames[d.getDay()] + ') - ' + fmtShort(maxAmt), color: '#f97316' });
+    }
+
+    // 4. Average transactions per day
+    const activeDays = Object.keys(byDate).length;
+    const avgPerActiveDay = activeDays > 0 ? Math.round(total / activeDays) : 0;
+    if (activeDays > 1) {
+      result.push({ icon: '\u{1F4B3}', text: activeDays + ' ngày có chi tiêu, TB ' + fmtShort(avgPerActiveDay) + '/ngày', color: '#3b82f6' });
+    }
+
+    // 5. Number of transactions
+    const txCount = rangeExpenses.length;
+    if (txCount > 0) {
+      const avgPerTx = Math.round(total / txCount);
+      result.push({ icon: '\u{1F9FE}', text: txCount + ' giao dịch, TB ' + fmtShort(avgPerTx) + '/giao dịch', color: '#8b5cf6' });
+    }
+
+    return result;
+  }, [rangeExpenses, allExpenses, dateFrom, dateTo]);
+
+  if (insights.length === 0) return null;
+
+  return html`
+    <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <div class="space-y-2">
+        ${insights.map((ins, i) => html`
+          <div key=${i} class="flex items-start gap-2">
+            <span class="text-sm shrink-0">${ins.icon}</span>
+            <p class="text-xs" style="color:${ins.color}">${ins.text}</p>
+          </div>
+        `)}
+      </div>
+    </div>
+  `;
+}
+
+function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo }) {
   const [expanded, setExpanded] = useState(() => load('tc-insights', false));
   useEffect(() => { save('tc-insights', expanded); }, [expanded]);
 
   return html`
     <div>
-      <div class="mx-4 mt-4">
+      <${CategoryChart} expenses=${rangeExpenses} />
+      <${TextInsights} rangeExpenses=${rangeExpenses} allExpenses=${allExpenses} budgets=${budgets} dateFrom=${dateFrom} dateTo=${dateTo} />
+      <div class="mx-4 mt-3">
         <button onClick=${() => setExpanded(!expanded)}
           class="w-full flex items-center justify-between px-4 py-2.5 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700">
-          <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">\u{1F4CA} Insights</span>
+          <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">\u{1F4CA} Biểu đồ chi tiết</span>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="transform:rotate(${expanded ? '180' : '0'}deg);transition:transform 0.2s"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
       </div>
       ${expanded && html`
         <div class="fade-in">
-          <${CategoryChart} expenses=${rangeExpenses} />
           <${DailySpendingChart} expenses=${rangeExpenses} />
           <${MonthlyComparisonChart} expenses=${allExpenses} budgets=${budgets} />
           <${CategoryTrendChart} expenses=${allExpenses} />
@@ -1053,17 +1179,26 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark }
     setScanning(true);
     setScanResults(null);
     try {
-      // Scan all images in parallel
+      // Scan all images in parallel (3-step pipeline: extract → categorize → duplicate detect)
       const allResults = await Promise.all(files.map(f => scanImage(f)));
-      const allItems = allResults.flat();
-      // Apply smart category from memory to scanned items
+      const allItems = allResults.flatMap(r => r.items);
+      const allDuplicates = allResults.flatMap(r => r.duplicates);
+      // Apply smart category from client memory as fallback
       const enhanced = allItems.map(it => {
         const mem = catMemory.suggestFromAll(it.detail);
         if (mem && it.category === 'other') it.category = mem.cat;
         return it;
       });
       if (enhanced.length >= 1) {
-        setScanResults(enhanced.map(it => ({ ...it, _id: uid() })));
+        // Mark items that have server-detected duplicates
+        const dupIndices = new Set(allDuplicates.map(d => d.scan_index));
+        const dupDetails = {};
+        allDuplicates.forEach(d => { dupDetails[d.scan_index] = d.existing_detail; });
+        setScanResults(enhanced.map((it, i) => ({
+          ...it, _id: uid(),
+          _serverDup: dupIndices.has(i),
+          _dupDetail: dupDetails[i] || null
+        })));
       }
     } catch (err) {
       console.error('Scan error:', err);
@@ -1162,10 +1297,10 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark }
                 </p>
                 <div class="space-y-2 max-h-64 overflow-y-auto">
                   ${scanResults.map((item) => {
-                    const isDup = findDuplicates(allExpenses || [], item.date, item.amount).length > 0;
+                    const isDup = item._serverDup || findDuplicates(allExpenses || [], item.date, item.amount).length > 0;
                     return html`
                       <div key=${item._id} class="bg-white dark:bg-zinc-800 rounded-lg p-2.5 border ${isDup ? 'border-amber-400' : 'border-zinc-200 dark:border-zinc-700'}">
-                        ${isDup && html`<p class="text-xs text-amber-500 mb-1">\u26A0\uFE0F Có thể trùng</p>`}
+                        ${isDup && html`<p class="text-xs text-amber-500 mb-1">\u26A0\uFE0F Có thể trùng${item._dupDetail ? ` với "${item._dupDetail}"` : ''}</p>`}
                         <div class="flex items-center gap-1.5 mb-1.5">
                           <select value=${item.category} onChange=${e => updateScanItem(item._id, 'category', e.target.value)}
                             class="px-1.5 py-1 rounded border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500" style="max-width:5.5rem">
@@ -1516,24 +1651,40 @@ function App() {
   // Budget calculation: sum budgets for all months in the selected range
   const budgetMonth = useMemo(() => dateFrom.slice(0, 7), [dateFrom]);
   const budgetInfo = useMemo(() => {
+    const DEFAULT_BUDGET = 15000000;
     const fromMonth = dateFrom.slice(0, 7);
     const toMonth = dateTo.slice(0, 7);
+    const fromDate = new Date(dateFrom + 'T00:00:00');
+    const toDate = new Date(dateTo + 'T00:00:00');
+    const rangeDays = Math.max(1, Math.round((toDate - fromDate) / 86400000) + 1);
+
     if (fromMonth === toMonth) {
-      // Single month: show that month's budget
-      return { total: budgets[fromMonth] || 0, months: 1, label: fromMonth };
+      // Single month: prorate budget by days selected vs days in month
+      const monthBudget = budgets[fromMonth] || DEFAULT_BUDGET;
+      const daysInMonth = new Date(fromDate.getFullYear(), fromDate.getMonth() + 1, 0).getDate();
+      const isFullMonth = fromDate.getDate() === 1 && toDate.getDate() === daysInMonth;
+      const prorated = isFullMonth ? monthBudget : Math.round(monthBudget / daysInMonth * rangeDays);
+      return { total: prorated, months: 1, label: fromMonth, fullMonth: isFullMonth };
     }
-    // Multiple months: sum budgets across all months in range
-    const DEFAULT_BUDGET = 15000000;
+    // Multiple months: sum prorated budgets for each month
     let total = 0, count = 0;
-    const d = new Date(dateFrom.slice(0, 7) + '-01');
-    const end = new Date(dateTo.slice(0, 7) + '-01');
-    while (d <= end) {
+    const d = new Date(fromMonth + '-01');
+    const endMonth = new Date(toMonth + '-01');
+    while (d <= endMonth) {
       const m = d.toISOString().slice(0, 7);
-      total += budgets[m] || DEFAULT_BUDGET;
+      const mBudget = budgets[m] || DEFAULT_BUDGET;
+      const daysInM = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+      // First month: from dateFrom to end of month
+      // Last month: from 1st to dateTo
+      // Middle months: full
+      let days = daysInM;
+      if (m === fromMonth) days = daysInM - fromDate.getDate() + 1;
+      else if (m === toMonth) days = toDate.getDate();
+      total += Math.round(mBudget / daysInM * days);
       count++;
       d.setMonth(d.getMonth() + 1);
     }
-    return { total, months: count, label: fromMonth };
+    return { total, months: count, label: fromMonth, fullMonth: false };
   }, [dateFrom, dateTo, budgets]);
   const monthBudget = budgetInfo.total;
 
@@ -1619,7 +1770,7 @@ function App() {
 
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} />
-        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} month=${budgetMonth} dark=${dark} monthCount=${budgetInfo.months} />
+        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} month=${budgetMonth} dark=${dark} monthCount=${budgetInfo.months} dateFrom=${dateFrom} dateTo=${dateTo} fullMonth=${budgetInfo.fullMonth} />
         ${visibleDups.length > 0 && html`
           <div class="px-4 mt-3 space-y-2">
             ${visibleDups.map(group => {
@@ -1652,7 +1803,7 @@ function App() {
             })}
           </div>
         `}
-        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} />
+        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} dateFrom=${dateFrom} dateTo=${dateTo} />
 
         <div class="px-4 mt-4">
           <div class="relative flex items-center">
