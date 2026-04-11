@@ -237,8 +237,10 @@ const apiCall = async (path, opts) => {
 };
 const fmt = (n) => new Intl.NumberFormat('vi-VN').format(n);
 const fmtShort = (n) => {
-  if (n >= 1000000) { const m = n / 1000000; return (m % 1 === 0 ? m.toFixed(0) : m.toFixed(1).replace(/\.0$/, '')) + 'M'; }
-  if (n >= 1000) { const k = n / 1000; return (k % 1 === 0 ? k.toFixed(0) : k.toFixed(1).replace(/\.0$/, '')) + 'k'; }
+  const sign = n < 0 ? '-' : '';
+  const a = Math.abs(n);
+  if (a >= 1000000) { const m = a / 1000000; return sign + (m % 1 === 0 ? m.toFixed(0) : m.toFixed(1).replace(/\.0$/, '')) + 'M'; }
+  if (a >= 1000) { const k = a / 1000; return sign + (k % 1 === 0 ? k.toFixed(0) : k.toFixed(1).replace(/\.0$/, '')) + 'k'; }
   return n.toString();
 };
 const today = () => new Date().toISOString().slice(0, 10);
