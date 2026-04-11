@@ -254,18 +254,30 @@ def _call_groq(payload):
     if not api_key:
         raise Exception("GROQ_API_KEY chưa được cấu hình")
     url = "https://api.groq.com/openai/v1/chat/completions"
-    resp = http_requests.post(url, json=payload, headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
+    try:
+        resp = http_requests.post(url, json=payload, headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
+    except Exception as e:
+        raise Exception(f"Không kết nối được Groq: {str(e)}")
+    raw = resp.text
     if resp.status_code != 200:
         try:
-            err = resp.json()
-            msg = err.get("error", {}).get("message", resp.text[:200])
+            err = json.loads(raw)
+            msg = err.get("error", {}).get("message", raw[:200])
         except:
-            msg = resp.text[:200]
+            msg = raw[:200] if raw else f"HTTP {resp.status_code}"
         raise Exception(f"Groq API lỗi ({resp.status_code}): {msg}")
-    data = resp.json()
+    if not raw or not raw.strip():
+        raise Exception("Groq API trả về response rỗng")
+    try:
+        data = json.loads(raw)
+    except:
+        raise Exception(f"Groq trả về không phải JSON: {raw[:200]}")
     if not data.get("choices"):
-        raise Exception("Groq API trả về rỗng")
-    text = data["choices"][0]["message"]["content"].strip()
+        raise Exception(f"Groq không có choices: {raw[:200]}")
+    content = data["choices"][0].get("message", {}).get("content", "")
+    text = content.strip() if content else ""
+    if not text:
+        raise Exception("Groq trả về nội dung rỗng")
     if text.startswith("```"):
         text = re.sub(r'^```\w*\n?', '', text)
         text = re.sub(r'\n?```$', '', text)
