@@ -150,11 +150,13 @@ QUAN TRỌNG - PHÂN BIỆT TIỀN VÀO VÀ TIỀN RA:
 - Nếu ghi "nhận tiền", "chuyển đến", "hoàn tiền", "tiền thưởng", "lương" → BỎ QUA.
 - Nếu ghi "thanh toán", "chuyển tiền", "mua", "chi" → LẤY.
 
-QUAN TRỌNG VỀ NGÀY:
-- Nếu ảnh ghi "hôm nay" hoặc "today" → dùng ngày {today}.
-- Nếu ảnh ghi "hôm qua" hoặc "yesterday" → dùng ngày {yesterday}.
-- Nếu không rõ năm → dùng năm {year}.
-- Nếu không có ngày nào → dùng "{today}".
+QUAN TRỌNG VỀ NGÀY (BẮT BUỘC tuân theo):
+- HÔM NAY = {today}, HÔM QUA = {yesterday}
+- Nếu ảnh ghi "hôm nay", "today", "hn" → date PHẢI LÀ "{today}"
+- Nếu ảnh ghi "hôm qua", "yesterday", "hq" → date PHẢI LÀ "{yesterday}"
+- Nếu ảnh ghi ngày cụ thể (VD: 9/4, 09/04) → dùng ngày đó, năm {year}
+- Nếu không có ngày nào → dùng "{today}"
+- KHÔNG ĐƯỢC nhầm hôm nay với hôm qua. Kiểm tra lại trước khi trả về.
 
 Với mỗi khoản, trích xuất:
 - "date": ngày giao dịch (format YYYY-MM-DD)
