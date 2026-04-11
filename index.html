@@ -492,10 +492,11 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
   `;
 }
 
-function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true, savings = 0 }) {
+function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true, savings = 0, income: propIncome = 0, savingsTarget: propSavingsTarget = 0 }) {
   const budget = rawBudget || 15000000;
   const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState('');
+  const [incomeVal, setIncomeVal] = useState('');
+  const [savingsVal, setSavingsVal] = useState('');
   const pct = budget > 0 ? Math.min((total / budget) * 100, 100) : 0;
   const over = budget > 0 && total > budget;
   const warn = budget > 0 && total > budget * 0.8 && !over;
@@ -505,36 +506,55 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
     : (month.slice(0, 4) === new Date().getFullYear().toString() ? 'Tháng ' + parseInt(month.slice(5)) : month);
 
   const handleSave = () => {
-    const n = parseInt(val.replace(/\D/g, ''));
-    if (n > 0) onSetBudget(n); else onSetBudget(0);
+    const inc = parseInt((incomeVal || '0').replace(/\D/g, '')) || 0;
+    const sav = parseInt((savingsVal || '0').replace(/\D/g, '')) || 0;
+    onSetBudget(inc, sav);
     setEditing(false);
   };
+
+  const inputStyle = "w-full px-3 py-2 text-sm rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500";
+  const inputBorder = "background:" + (dark ? '#0f172a' : '#fff') + ";border:1px solid " + (dark ? '#475569' : '#d4d4d8') + ";color:" + (dark ? '#e2e8f0' : '#27272a');
 
   return html`
     <div class="mx-4 mt-3 p-4 rounded-xl" style="background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#334155' : '#e4e4e7'}">
       <div class="flex items-center justify-between mb-2">
         <span class="text-sm font-semibold" style="color:${dark ? '#f1f5f9' : '#27272a'}">${monthLabel}</span>
         ${!editing ? html`
-          ${monthCount <= 1 && fullMonth && html`<button onClick=${() => { setVal(rawBudget > 0 ? rawBudget.toString() : ''); setEditing(true); }}
+          ${monthCount <= 1 && fullMonth && html`<button onClick=${() => { setIncomeVal(propIncome > 0 ? propIncome.toString() : ''); setSavingsVal(propSavingsTarget > 0 ? propSavingsTarget.toString() : ''); setEditing(true); }}
             class="text-xs px-2.5 py-1 rounded-lg hover:opacity-80 transition-colors"
             style="background:${dark ? '#334155' : '#f4f4f5'};color:${dark ? '#94a3b8' : '#71717a'}">
-            Sửa ngân sách
+            Sửa thu nhập
           </button>`}
         ` : html`
           <div class="flex items-center gap-1.5">
-            <input value=${val} onInput=${e => setVal(e.target.value)} placeholder="VD: 5000000"
-              class="w-28 px-2 py-1 text-xs rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              style="background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#475569' : '#d4d4d8'};color:${dark ? '#e2e8f0' : '#27272a'}"
-              autofocus onKeyDown=${e => e.key === 'Enter' && handleSave()} />
-            <button onClick=${handleSave} class="text-xs font-medium px-2 py-1 rounded-lg" style="color:#10b981">OK</button>
+            <button onClick=${handleSave} class="text-xs font-medium px-2.5 py-1 rounded-lg" style="color:#10b981">Lưu</button>
             <button onClick=${() => setEditing(false)} class="text-xs px-2 py-1" style="color:${dark ? '#94a3b8' : '#a1a1aa'}">Hủy</button>
           </div>
         `}
       </div>
+      ${editing && html`
+        <div class="mb-3 space-y-2">
+          <div>
+            <label class="text-xs mb-1 block" style="color:${dark ? '#94a3b8' : '#71717a'}">Thu nhập (lương)</label>
+            <input value=${incomeVal} onInput=${e => setIncomeVal(e.target.value)} placeholder="VD: 20000000" inputMode="numeric"
+              class=${inputStyle} style=${inputBorder} autofocus />
+          </div>
+          <div>
+            <label class="text-xs mb-1 block" style="color:${dark ? '#94a3b8' : '#71717a'}">Tiết kiệm/tháng</label>
+            <input value=${savingsVal} onInput=${e => setSavingsVal(e.target.value)} placeholder="VD: 5000000" inputMode="numeric"
+              class=${inputStyle} style=${inputBorder} onKeyDown=${e => e.key === 'Enter' && handleSave()} />
+          </div>
+          ${(incomeVal || savingsVal) && html`
+            <p class="text-xs" style="color:${dark ? '#94a3b8' : '#71717a'}">
+              Budget = ${fmtShort(parseInt((incomeVal||'0').replace(/\D/g,''))||0)} - ${fmtShort(parseInt((savingsVal||'0').replace(/\D/g,''))||0)} = <strong style="color:${dark ? '#e2e8f0' : '#18181b'}">${fmtShort(Math.max(0, (parseInt((incomeVal||'0').replace(/\D/g,''))||0) - (parseInt((savingsVal||'0').replace(/\D/g,''))||0)))}</strong>
+            </p>
+          `}
+        </div>
+      `}
       <div class="flex items-end justify-between mb-2">
         <div>
           <p class="text-2xl font-bold tracking-tight" style="color:${over ? '#ef4444' : dark ? '#f1f5f9' : '#18181b'}">${fmt(total)}đ</p>
-          <p class="text-xs mt-0.5" style="color:${dark ? '#64748b' : '#a1a1aa'}">/ ${fmt(budget)}đ ${monthCount > 1 ? '(' + monthCount + ' tháng)' : (!rawBudget ? '(mặc định 15M)' : '')}</p>
+          <p class="text-xs mt-0.5" style="color:${dark ? '#64748b' : '#a1a1aa'}">/ ${fmt(budget)}đ${propIncome > 0 ? ' (lương ' + fmtShort(propIncome) + ')' : monthCount > 1 ? ' (' + monthCount + ' tháng)' : (!rawBudget ? ' (mặc định)' : '')}</p>
         </div>
         <div class="text-right">
           <p class="text-lg font-bold" style="color:${over ? '#ef4444' : '#10b981'}">${Math.round(pct)}%</p>
@@ -547,9 +567,9 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
         <div class="h-full rounded-full transition-all duration-500"
           style="width:${pct}%;background:${over ? '#ef4444' : warn ? '#f59e0b' : '#10b981'}" />
       </div>
-      ${savings > 0 && html`
+      ${(savings > 0 || propSavingsTarget > 0) && html`
         <div class="flex items-center justify-between mt-2 pt-2" style="border-top:1px solid ${dark ? '#334155' : '#f4f4f5'}">
-          <span class="text-xs" style="color:${dark ? '#5eead4' : '#0d9488'}">\u{1F4B0} Tiết kiệm</span>
+          <span class="text-xs" style="color:${dark ? '#5eead4' : '#0d9488'}">\u{1F4B0} Tiết kiệm${propSavingsTarget > 0 ? ' (mục tiêu ' + fmtShort(propSavingsTarget) + ')' : ''}</span>
           <span class="text-sm font-semibold" style="color:${dark ? '#5eead4' : '#0d9488'}">${fmtShort(savings)}</span>
         </div>
       `}
@@ -688,7 +708,11 @@ function MonthlyComparisonChart({ expenses, budgets }) {
       byMonth[m] = (byMonth[m] || 0) + e.amount;
     });
     const months = Object.keys(byMonth).sort().slice(-6);
-    return months.map(m => ({ month: m, total: byMonth[m] || 0, budget: budgets[m] || 0 }));
+    return months.map(m => {
+      const b = budgets[m];
+      const budgetAmt = !b ? 0 : typeof b === 'number' ? b : (b.amount || 0);
+      return { month: m, total: byMonth[m] || 0, budget: budgetAmt };
+    });
   }, [expenses, budgets]);
 
   if (data.length < 2) return null;
@@ -1811,26 +1835,34 @@ function App() {
     const toDate = new Date(dateTo + 'T00:00:00');
     const rangeDays = Math.max(1, Math.round((toDate - fromDate) / 86400000) + 1);
 
+    const getBudgetAmount = (m) => {
+      const b = budgets[m];
+      if (!b) return DEFAULT_BUDGET;
+      if (typeof b === 'number') return b; // legacy format
+      return b.amount || (b.income ? b.income - (b.savings_target || 0) : DEFAULT_BUDGET);
+    };
+    const getBudgetData = (m) => {
+      const b = budgets[m];
+      if (!b) return { income: 0, savings_target: 0 };
+      if (typeof b === 'number') return { income: 0, savings_target: 0 };
+      return { income: b.income || 0, savings_target: b.savings_target || 0 };
+    };
+
     if (fromMonth === toMonth) {
-      // Single month: prorate budget by days selected vs days in month
-      const monthBudget = budgets[fromMonth] || DEFAULT_BUDGET;
+      const monthBudget = getBudgetAmount(fromMonth);
+      const bd = getBudgetData(fromMonth);
       const daysInMonth = new Date(fromDate.getFullYear(), fromDate.getMonth() + 1, 0).getDate();
-      // Full month if starts on 1st (regardless of end date - "Tháng này" ends at today)
       const isFullMonth = fromDate.getDate() === 1;
       const prorated = isFullMonth ? monthBudget : Math.round(monthBudget / daysInMonth * rangeDays);
-      return { total: prorated, months: 1, label: fromMonth, fullMonth: isFullMonth };
+      return { total: prorated, months: 1, label: fromMonth, fullMonth: isFullMonth, income: bd.income, savings_target: bd.savings_target };
     }
-    // Multiple months: sum prorated budgets for each month
     let total = 0, count = 0;
     const d = new Date(fromMonth + '-01');
     const endMonth = new Date(toMonth + '-01');
     while (d <= endMonth) {
       const m = d.toISOString().slice(0, 7);
-      const mBudget = budgets[m] || DEFAULT_BUDGET;
+      const mBudget = getBudgetAmount(m);
       const daysInM = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-      // First month: from dateFrom to end of month
-      // Last month: from 1st to dateTo
-      // Middle months: full
       let days = daysInM;
       if (m === fromMonth) days = daysInM - fromDate.getDate() + 1;
       else if (m === toMonth) days = toDate.getDate();
@@ -1838,7 +1870,7 @@ function App() {
       count++;
       d.setMonth(d.getMonth() + 1);
     }
-    return { total, months: count, label: fromMonth, fullMonth: false };
+    return { total, months: count, label: fromMonth, fullMonth: false, income: 0, savings_target: 0 };
   }, [dateFrom, dateTo, budgets]);
   const monthBudget = budgetInfo.total;
 
@@ -1871,9 +1903,10 @@ function App() {
     await apiCall('/api/expenses/'+id, { method: 'DELETE' });
   };
 
-  const setBudget = async (v) => {
-    setBudgets(prev => ({ ...prev, [budgetMonth]: v }));
-    await apiCall('/api/budgets', { method: 'POST', body: JSON.stringify({ month: budgetMonth, amount: v }) });
+  const setBudget = async (income, savingsTarget) => {
+    const amount = income - savingsTarget;
+    setBudgets(prev => ({ ...prev, [budgetMonth]: { amount, income, savings_target: savingsTarget } }));
+    await apiCall('/api/budgets', { method: 'POST', body: JSON.stringify({ month: budgetMonth, income, savings_target: savingsTarget }) });
   };
 
   const exportCSV = () => {
@@ -1979,7 +2012,7 @@ function App() {
 
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} />
-        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} month=${budgetMonth} dark=${dark} monthCount=${budgetInfo.months} fullMonth=${budgetInfo.fullMonth} savings=${rangeSavings} />
+        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} month=${budgetMonth} dark=${dark} monthCount=${budgetInfo.months} fullMonth=${budgetInfo.fullMonth} savings=${rangeSavings} income=${budgetInfo.income} savingsTarget=${budgetInfo.savings_target} />
         ${visibleDups.length > 0 && html`
           <div class="px-4 mt-3 space-y-2">
             ${visibleDups.map(group => {

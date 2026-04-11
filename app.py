@@ -72,6 +72,8 @@ def init_db():
     try:
         cur.execute("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS user_code TEXT DEFAULT 'default'")
         cur.execute("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS project_id TEXT DEFAULT ''")
+        cur.execute("ALTER TABLE budgets ADD COLUMN IF NOT EXISTS income INTEGER DEFAULT 0")
+        cur.execute("ALTER TABLE budgets ADD COLUMN IF NOT EXISTS savings_target INTEGER DEFAULT 0")
         cur.execute("ALTER TABLE budgets DROP CONSTRAINT IF EXISTS budgets_pkey")
         cur.execute("ALTER TABLE budgets ADD COLUMN IF NOT EXISTS user_code TEXT DEFAULT 'default'")
         cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS token TEXT")
@@ -619,23 +621,29 @@ def list_budgets():
     user_code = get_user_code()
     conn = get_db()
     cur = conn.cursor()
-    cur.execute("SELECT month, amount FROM budgets WHERE user_code=%s", (user_code,))
+    cur.execute("SELECT month, amount, COALESCE(income, 0) as income, COALESCE(savings_target, 0) as savings_target FROM budgets WHERE user_code=%s", (user_code,))
     rows = cur.fetchall()
     cur.close()
     conn.close()
-    return jsonify({r["month"]: r["amount"] for r in rows})
+    result = {}
+    for r in rows:
+        result[r["month"]] = {"amount": r["amount"], "income": r["income"], "savings_target": r["savings_target"]}
+    return jsonify(result)
 
 @app.route("/api/budgets", methods=["POST"])
 @require_auth
 def set_budget():
     data = request.json
     user_code = get_user_code()
+    income = data.get("income", 0)
+    savings_target = data.get("savings_target", 0)
+    amount = income - savings_target if income > 0 else data.get("amount", 0)
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        """INSERT INTO budgets (month, amount, user_code) VALUES (%s, %s, %s)
-           ON CONFLICT (month, user_code) DO UPDATE SET amount=%s""",
-        (data["month"], data["amount"], user_code, data["amount"])
+        """INSERT INTO budgets (month, amount, income, savings_target, user_code) VALUES (%s, %s, %s, %s, %s)
+           ON CONFLICT (month, user_code) DO UPDATE SET amount=%s, income=%s, savings_target=%s""",
+        (data["month"], amount, income, savings_target, user_code, amount, income, savings_target)
     )
     conn.commit()
     cur.close()
