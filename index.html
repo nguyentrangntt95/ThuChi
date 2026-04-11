@@ -269,7 +269,8 @@ async function scanImage(file) {
   if (token) headers['Authorization'] = 'Bearer ' + token;
   const res = await fetch('/api/scan', { method: 'POST', body: formData, headers });
   const data = await res.json();
-  return { items: data.items || [], duplicates: data.duplicates || [] };
+  if (data.error) console.error('Scan API error:', data.error);
+  return { items: data.items || [], duplicates: data.duplicates || [], error: data.error || null };
 }
 
 const CATEGORIES = [
@@ -557,7 +558,7 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
 
 function PieChart({ data, grandTotal }) {
   const [active, setActive] = useState(-1);
-  const size = 260, cx = size/2, cy = size/2, r = 95;
+  const size = 200, cx = size/2, cy = size/2, r = 72;
   let cumAngle = -Math.PI / 2;
   const slices = data.map((d, i) => {
     const angle = (d.total / grandTotal) * Math.PI * 2;
@@ -583,13 +584,13 @@ function PieChart({ data, grandTotal }) {
           style="cursor:pointer;transition:opacity 0.15s"
           onMouseEnter=${() => setActive(s.idx)} onClick=${() => setActive(active === s.idx ? -1 : s.idx)} />
       `)}
-      <circle cx=${cx} cy=${cy} r="52" class="fill-white dark:fill-zinc-800" />
+      <circle cx=${cx} cy=${cy} r="38" class="fill-white dark:fill-zinc-800" />
       ${act ? html`
-        <text x=${cx} y=${cy-6} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200" style="font-size:16px;font-weight:700">${fmtShort(act.total)}</text>
-        <text x=${cx} y=${cy+12} text-anchor="middle" style="font-size:13px;font-weight:600" fill=${act.hex}>${act.emoji} ${Math.round(act.total/grandTotal*100)}%</text>
+        <text x=${cx} y=${cy-5} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200" style="font-size:12px;font-weight:700">${fmtShort(act.total)}</text>
+        <text x=${cx} y=${cy+9} text-anchor="middle" style="font-size:10px;font-weight:600" fill=${act.hex}>${act.emoji} ${Math.round(act.total/grandTotal*100)}%</text>
       ` : html`
-        <text x=${cx} y=${cy-4} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200" style="font-size:18px;font-weight:700">${fmtShort(grandTotal)}</text>
-        <text x=${cx} y=${cy+16} text-anchor="middle" class="fill-zinc-400" style="font-size:12px">VNĐ</text>
+        <text x=${cx} y=${cy-3} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200" style="font-size:14px;font-weight:700">${fmtShort(grandTotal)}</text>
+        <text x=${cx} y=${cy+12} text-anchor="middle" class="fill-zinc-400" style="font-size:10px">VNĐ</text>
       `}
     </svg>
   `;
@@ -610,27 +611,28 @@ function CategoryChart({ expenses }) {
 
   return html`
     <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
-      ${spendingData.length > 0 && html`
-        <div class="flex justify-center mb-3">
-          <${PieChart} data=${spendingData} grandTotal=${grandTotal} />
-        </div>
-      `}
-      <div class="space-y-2">
-        ${spendingData.map(d => html`
-          <div key=${d.id} class="flex items-center gap-2.5">
-            <span class="w-3 h-3 rounded-full shrink-0" style="background-color:${d.hex}"></span>
-            <span class="text-sm text-zinc-600 dark:text-zinc-400 truncate">${d.emoji} ${d.name}</span>
-            <span class="ml-auto text-sm font-semibold text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${fmtShort(d.total)}</span>
-            <span class="text-xs text-zinc-400 w-8 text-right">${Math.round(d.total/grandTotal*100)}%</span>
-          </div>
-        `)}
-        ${savingsTotal > 0 && html`
-          <div class="flex items-center gap-2.5 pt-2 mt-1 border-t border-zinc-200 dark:border-zinc-700">
-            <span class="w-3 h-3 rounded-full shrink-0" style="background-color:#14b8a6"></span>
-            <span class="text-sm text-teal-600 dark:text-teal-400 truncate">\u{1F4B0} Tiết kiệm</span>
-            <span class="ml-auto text-sm font-semibold text-teal-600 dark:text-teal-400 whitespace-nowrap">${fmtShort(savingsTotal)}</span>
+      <div class="flex gap-3 items-start">
+        ${spendingData.length > 0 && html`
+          <div class="shrink-0">
+            <${PieChart} data=${spendingData} grandTotal=${grandTotal} />
           </div>
         `}
+        <div class="flex-1 min-w-0 space-y-1.5 pt-1">
+          ${spendingData.map(d => html`
+            <div key=${d.id} class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:${d.hex}"></span>
+              <span class="text-xs text-zinc-600 dark:text-zinc-400 truncate">${d.emoji} ${d.name}</span>
+              <span class="ml-auto text-xs font-semibold text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${fmtShort(d.total)} <span class="text-zinc-400 font-normal">${Math.round(d.total/grandTotal*100)}%</span></span>
+            </div>
+          `)}
+          ${savingsTotal > 0 && html`
+            <div class="flex items-center gap-2 pt-1.5 mt-1 border-t border-zinc-200 dark:border-zinc-700">
+              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:#14b8a6"></span>
+              <span class="text-xs text-teal-600 dark:text-teal-400 truncate">\u{1F4B0} Tiết kiệm</span>
+              <span class="ml-auto text-xs font-semibold text-teal-600 dark:text-teal-400 whitespace-nowrap">${fmtShort(savingsTotal)}</span>
+            </div>
+          `}
+        </div>
       </div>
     </div>
   `;
@@ -1225,6 +1227,7 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
   const [scanning, setScanning] = useState(false);
   const [scanPreview, setScanPreview] = useState(null);
   const [scanResults, setScanResults] = useState(null);
+  const [scanError, setScanError] = useState(null);
   const [catSuggestion, setCatSuggestion] = useState(null);
   const [autoApplied, setAutoApplied] = useState(false);
   const fileRef = useRef(null);
@@ -1262,9 +1265,12 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
     setScanPreview(URL.createObjectURL(files[0]));
     setScanning(true);
     setScanResults(null);
+    setScanError(null);
     try {
       // Scan all images in parallel (3-step pipeline: extract → categorize → duplicate detect)
       const allResults = await Promise.all(files.map(f => scanImage(f)));
+      const errors = allResults.filter(r => r.error).map(r => r.error);
+      if (errors.length > 0) setScanError(errors[0]);
       const allItems = allResults.flatMap(r => r.items);
       const allDuplicates = allResults.flatMap(r => r.duplicates);
       // Apply smart category from client memory as fallback
@@ -1283,9 +1289,12 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
           _serverDup: dupIndices.has(i),
           _dupDetail: dupDetails[i] || null
         })));
+      } else if (errors.length === 0) {
+        setScanError('Không đọc được khoản chi tiêu nào từ ảnh');
       }
     } catch (err) {
       console.error('Scan error:', err);
+      setScanError('Lỗi: ' + (err.message || 'Không thể đọc ảnh'));
     }
     setScanning(false);
     if (fileRef.current) fileRef.current.value = '';
@@ -1371,7 +1380,12 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
             ${scanPreview && !scanning && html`
               <div class="mt-3 relative" style="display:inline-block">
                 <img src=${scanPreview} class="h-20 max-w-full rounded-lg object-cover" style="max-width:120px" />
-                <button onClick=${() => { setScanPreview(null); setScanResults(null); }} class="absolute -top-2 -right-2 w-7 h-7 bg-zinc-600 text-white rounded-full text-base flex items-center justify-center shadow-md">\u00D7</button>
+                <button onClick=${() => { setScanPreview(null); setScanResults(null); setScanError(null); }} class="absolute -top-2 -right-2 w-7 h-7 bg-zinc-600 text-white rounded-full text-base flex items-center justify-center shadow-md">\u00D7</button>
+              </div>
+            `}
+            ${scanError && !scanning && html`
+              <div class="mt-3 p-3 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-800">
+                <p class="text-sm text-red-600 dark:text-red-400">${scanError}</p>
               </div>
             `}
             ${scanResults && scanResults.length >= 1 && html`
@@ -1890,33 +1904,39 @@ function App() {
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
             </button>
             ${showSettings && html`
-              <div class="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 shadow-xl z-50 fade-in overflow-hidden"
+              <div class="absolute right-0 top-full mt-2 w-64 rounded-xl shadow-xl z-50 fade-in overflow-hidden"
+                style="background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#334155' : '#e4e4e7'}"
                 onClick=${e => e.stopPropagation()}>
                 <div class="p-2 space-y-0.5">
                   <button onClick=${() => { setDark(!dark); }}
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors text-left">
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left"
+                    style="color:${dark ? '#e2e8f0' : '#3f3f46'}">
                     ${dark ? html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>` : html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>`}
                     ${dark ? 'Chế độ sáng' : 'Chế độ tối'}
                   </button>
                   <button onClick=${() => { setShowQR(true); setShowSettings(false); }}
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors text-left">
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left"
+                    style="color:${dark ? '#e2e8f0' : '#3f3f46'}">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="2" width="8" height="8" rx="1"/><rect x="14" y="2" width="8" height="8" rx="1"/><rect x="2" y="14" width="8" height="8" rx="1"/><rect x="14" y="14" width="4" height="4"/><line x1="22" y1="18" x2="22" y2="22"/><line x1="18" y1="22" x2="22" y2="22"/></svg>
                     QR Code
                   </button>
                   <button onClick=${() => { setShowProjects(true); setShowSettings(false); }}
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors text-left">
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left"
+                    style="color:${dark ? '#e2e8f0' : '#3f3f46'}">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
                     Projects ${projects.length > 0 ? '(' + projects.length + ')' : ''}
                   </button>
                   <button onClick=${() => { exportCSV(); setShowSettings(false); }}
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-700 transition-colors text-left">
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left"
+                    style="color:${dark ? '#e2e8f0' : '#3f3f46'}">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                     Xuất CSV
                   </button>
                 </div>
-                <div class="border-t border-zinc-200 dark:border-zinc-700 p-2">
+                <div class="p-2" style="border-top:1px solid ${dark ? '#334155' : '#e4e4e7'}">
                   <button onClick=${() => { handleLogout(); setShowSettings(false); }}
-                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors text-left">
+                    class="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors text-left"
+                    style="color:#ef4444">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                     Đăng xuất
                   </button>
