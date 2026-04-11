@@ -9,9 +9,12 @@ import psycopg2
 import requests as http_requests
 from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, send_file, Response
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 from functools import wraps
 app = Flask(__name__)
+VN_TZ = timezone(timedelta(hours=7))
+def vn_today():
+    return datetime.now(VN_TZ).date()
 
 clients = []  # list of (user_code, queue) tuples
 
@@ -289,9 +292,9 @@ def _call_groq(payload):
 def step1_extract(image_bytes, content_type):
     """Step 1: Extract all items from image as raw text/data"""
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
-    today_str = date.today().isoformat()
-    yesterday_str = (date.today() - timedelta(days=1)).isoformat()
-    year = date.today().year
+    today_str = vn_today().isoformat()
+    yesterday_str = (vn_today() - timedelta(days=1)).isoformat()
+    year = vn_today().year
     prompt = EXTRACT_PROMPT.format(today=today_str, yesterday=yesterday_str, year=year)
 
     payload = {
@@ -319,7 +322,7 @@ def step1_extract(image_bytes, content_type):
         items = [items]
 
     # Validate and clean extracted items
-    today_str = date.today().isoformat()
+    today_str = vn_today().isoformat()
     result = []
     for item in items:
         amt = int(item.get('amount', 0))
