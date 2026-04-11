@@ -225,31 +225,36 @@ def get_user_category_patterns(user_code):
         return {}
 
 def find_potential_duplicates(user_code, items):
-    """Step 3: Find potential duplicates by same date + similar amount"""
+    """Step 3: Find potential duplicates by same amount within ±3 days"""
     try:
         conn = get_db()
         cur = conn.cursor()
         dates = list(set(it['date'] for it in items))
         if not dates:
             return []
-        placeholders = ','.join(['%s'] * len(dates))
-        cur.execute(f"""
+        min_date = (date.fromisoformat(min(dates)) - timedelta(days=3)).isoformat()
+        max_date = (date.fromisoformat(max(dates)) + timedelta(days=3)).isoformat()
+        cur.execute("""
             SELECT id, date, detail, amount FROM expenses
-            WHERE user_code=%s AND date IN ({placeholders})
-        """, [user_code] + dates)
+            WHERE user_code=%s AND date >= %s AND date <= %s
+        """, [user_code, min_date, max_date])
         existing = cur.fetchall()
         cur.close()
         conn.close()
 
         duplicates = []
         for i, item in enumerate(items):
+            item_date = date.fromisoformat(item['date'])
             for ex in existing:
-                if ex['date'] == item['date'] and ex['amount'] == item['amount']:
+                ex_date = date.fromisoformat(ex['date'])
+                days_diff = abs((item_date - ex_date).days)
+                if days_diff <= 3 and ex['amount'] == item['amount']:
                     duplicates.append({
                         'scan_index': i,
                         'existing_id': ex['id'],
                         'existing_detail': ex['detail'],
-                        'match_reason': 'same_date_amount'
+                        'existing_date': ex['date'],
+                        'match_reason': 'same_amount_nearby'
                     })
                     break
         return duplicates
