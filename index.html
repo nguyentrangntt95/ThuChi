@@ -281,6 +281,7 @@ const CATEGORIES = [
   { id: 'bills', name: 'Hoa don', emoji: '\u{1F4C4}', hex: '#eab308' },
   { id: 'health', name: 'Suc khoe', emoji: '\u{1F48A}', hex: '#22c55e' },
   { id: 'education', name: 'Hoc tap', emoji: '\u{1F4DA}', hex: '#6366f1' },
+  { id: 'beauty', name: 'Lam dep', emoji: '\u{1F484}', hex: '#f43f5e' },
   { id: 'other', name: 'Khac', emoji: '\u{1F4CC}', hex: '#71717a' },
   { id: 'savings', name: 'Tiet kiem', emoji: '\u{1F4B0}', hex: '#14b8a6' },
 ];
@@ -288,7 +289,7 @@ const catMap = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 const SAVINGS_CAT = 'savings';
 
 // Vietnamese names for display
-const CAT_NAMES = {food:'Ăn uống',transport:'Di chuyển',shopping:'Mua sắm',entertainment:'Giải trí',bills:'Hóa đơn',health:'Sức khỏe',education:'Học tập',other:'Khác',savings:'Tiết kiệm'};
+const CAT_NAMES = {food:'Ăn uống',transport:'Di chuyển',shopping:'Mua sắm',entertainment:'Giải trí',bills:'Hóa đơn',health:'Sức khỏe',education:'Học tập',beauty:'Làm đẹp',other:'Khác',savings:'Tiết kiệm'};
 CATEGORIES.forEach(c => c.name = CAT_NAMES[c.id]);
 
 // ── Smart Category Learning ──

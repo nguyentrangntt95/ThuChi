@@ -165,7 +165,7 @@ Nếu không đọc được gì hữu ích, trả về: []"""
 # Step 2: Categorize extracted items using AI + user history
 CATEGORIZE_PROMPT = """Bạn là trợ lý phân loại chi tiêu. Hãy phân loại từng khoản chi tiêu dưới đây vào đúng category.
 
-CÁC CATEGORY HỢP LỆ: food, transport, shopping, entertainment, bills, health, education, savings, other
+CÁC CATEGORY HỢP LỆ: food, transport, shopping, entertainment, bills, health, education, beauty, savings, other
 
 QUY TẮC PHÂN LOẠI:
 - MOCA, GrabFood, GrabMart, ShopeeFood, Baemin, tên nhà hàng/quán ăn/cafe (Starbucks, Highland, Phúc Long, KFC, McDonald's, Jollibee, Pizza Hut, Lotteria, The Coffee House, Cộng Cà Phê, trà sữa, cơm, phở, bún, bánh mì...) → food
@@ -175,6 +175,7 @@ QUY TẮC PHÂN LOẠI:
 - Tiền điện, nước, internet, điện thoại, thuê nhà → bills
 - Bệnh viện, thuốc, khám, nha khoa → health
 - Học phí, sách, khóa học, Udemy, Coursera → education
+- Mỹ phẩm, skincare, spa, làm tóc, làm nail, thẩm mỹ → beauty
 - Gửi tiết kiệm, đầu tư, tích lũy, để dành → savings
 - Không rõ → other
 
@@ -368,7 +369,7 @@ def step2_categorize(items, user_code=None):
         if not isinstance(categories, list):
             categories = [categories]
 
-        valid_cats = {'food','transport','shopping','entertainment','bills','health','education','savings','other'}
+        valid_cats = {'food','transport','shopping','entertainment','bills','health','education','beauty','savings','other'}
         cat_map = {}
         for c in categories:
             idx = c.get('index', -1)
