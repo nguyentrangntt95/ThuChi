@@ -608,9 +608,9 @@ function CategoryChart({ expenses }) {
   const grandTotal = spendingData.reduce((s, d) => s + d.total, 0);
 
   return html`
-    <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
-      <div class="flex gap-3 items-start">
-        <div class="shrink-0" style="width:140px">
+    <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <div class="flex gap-2 items-start">
+        <div class="shrink-0" style="width:130px;margin-left:-4px">
           <${PieChart} data=${spendingData} grandTotal=${grandTotal} />
         </div>
         <div class="flex-1 min-w-0 space-y-1.5 pt-1">
@@ -1919,7 +1919,7 @@ function App() {
   };
 
   return html`
-    <div class="min-h-screen transition-colors ${dark ? 'bg-zinc-900' : 'bg-zinc-50'}">
+    <div class="min-h-screen transition-colors ${dark ? 'dark bg-zinc-900' : 'bg-zinc-50'}">
       <header class="sticky top-0 z-40 backdrop-blur-md bg-white/80 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800">
         <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div class="flex items-center gap-2">
