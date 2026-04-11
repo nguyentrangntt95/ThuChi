@@ -635,11 +635,11 @@ function CategoryChart({ expenses }) {
 
   return html`
     <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
-      <div class="flex gap-2 items-start">
-        <div class="shrink-0" style="width:130px;margin-left:-4px">
+      <div class="flex gap-3 items-center">
+        <div class="shrink-0" style="width:38%">
           <${PieChart} data=${spendingData} grandTotal=${grandTotal} />
         </div>
-        <div class="flex-1 min-w-0 space-y-1.5 pt-1">
+        <div class="flex-1 min-w-0 space-y-1.5">
           ${spendingData.map(d => html`
             <div key=${d.id} class="flex items-center gap-2">
               <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:${d.hex}"></span>
