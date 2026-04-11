@@ -983,6 +983,44 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
       result.push({ icon: '\u{1F4CA}', title: 'Thống kê', details: lines, color: '#6366f1' });
     }
 
+    // 4. Actionable suggestions
+    if (total > 0 && prevTotal > 0) {
+      const curCatTotals = {};
+      spendingExpenses.forEach(e => { curCatTotals[e.category] = (curCatTotals[e.category] || 0) + e.amount; });
+      const sortedCats = Object.entries(curCatTotals).sort((a,b) => b[1] - a[1]);
+      const tips = [];
+      // Top category > 40% of spending
+      if (sortedCats.length > 0) {
+        const [topId, topAmt] = sortedCats[0];
+        const topPct = Math.round(topAmt / total * 100);
+        const topCat = catMap[topId] || catMap.other;
+        if (topPct > 40) {
+          const save10 = Math.round(topAmt * 0.1);
+          tips.push(topCat.emoji + ' ' + topCat.name + ' chiếm ' + topPct + '%. Giảm 10% = tiết kiệm ' + fmtShort(save10) + '/tháng');
+        }
+      }
+      // Weekend spending higher than weekday
+      const weekendTotal = spendingExpenses.filter(e => { const d = new Date(e.date + 'T00:00:00').getDay(); return d === 0 || d === 6; }).reduce((s,e) => s + e.amount, 0);
+      const weekdayTotal = total - weekendTotal;
+      const weekendDays = [...new Set(spendingExpenses.filter(e => { const d = new Date(e.date + 'T00:00:00').getDay(); return d === 0 || d === 6; }).map(e => e.date))].length || 1;
+      const weekdayDays = Math.max(1, activeDays - weekendDays);
+      const weekendAvg = weekendTotal / weekendDays;
+      const weekdayAvg = weekdayTotal / weekdayDays;
+      if (weekendAvg > weekdayAvg * 1.5 && weekendTotal > 500000) {
+        tips.push('Cuối tuần chi gấp ' + (weekendAvg / weekdayAvg).toFixed(1) + 'x ngày thường. Giảm cuối tuần = tiết kiệm ~' + fmtShort(Math.round((weekendAvg - weekdayAvg) * weekendDays)) + '/tháng');
+      }
+      // Small transactions add up
+      const smallTxs = spendingExpenses.filter(e => e.amount <= 100000);
+      const smallTotal = smallTxs.reduce((s,e) => s + e.amount, 0);
+      const smallPct = Math.round(smallTotal / total * 100);
+      if (smallTxs.length >= 10 && smallPct > 15) {
+        tips.push(smallTxs.length + ' khoản nhỏ (< 100k) = ' + fmtShort(smallTotal) + ' (' + smallPct + '%). Cắt vài khoản nhỏ sẽ tiết kiệm đáng kể');
+      }
+      if (tips.length > 0) {
+        result.push({ icon: '\u{1F4A1}', title: 'Gợi ý tiết kiệm', details: tips, color: '#f59e0b' });
+      }
+    }
+
     return result;
   }, [rangeExpenses, allExpenses, dateFrom, dateTo]);
 
@@ -1012,7 +1050,7 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
   `;
 }
 
-function ProjectPanel({ projects, expenses, onAdd, onDelete, inline = false }) {
+function ProjectPanel({ projects, expenses, onAdd, onDelete, inline = false, onSelect, activeProject = '' }) {
   const [expanded, setExpanded] = useState(inline);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState('');
@@ -1058,18 +1096,22 @@ function ProjectPanel({ projects, expenses, onAdd, onDelete, inline = false }) {
       `}
       ${expanded && html`
         <div class="${inline ? '' : 'mt-2'} space-y-2 fade-in">
-          ${projects.map(p => html`
-            <div key=${p.id} class="flex items-center justify-between px-4 py-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+          ${projects.map(p => {
+            const isActive = activeProject === p.id;
+            return html`
+            <div key=${p.id} class="flex items-center justify-between px-4 py-3 rounded-xl cursor-pointer transition-colors"
+              style="background:${isActive ? (dark ? '#064e3b' : '#ecfdf5') : (dark ? '#1e293b' : '#fff')};border:1px solid ${isActive ? '#10b981' : (dark ? '#334155' : '#e4e4e7')}"
+              onClick=${() => onSelect && onSelect(isActive ? '' : p.id)}>
               <div>
-                <span class="text-sm font-medium text-zinc-800 dark:text-zinc-200">${p.emoji || '\u{1F4C1}'} ${p.name}</span>
-                <p class="text-xs text-zinc-400 mt-0.5">${projCounts[p.id] || 0} khoản - ${fmtShort(projTotals[p.id] || 0)}</p>
+                <span class="text-sm font-medium" style="color:${dark ? '#f1f5f9' : '#18181b'}">${p.emoji || '\u{1F4C1}'} ${p.name}</span>
+                <p class="text-xs mt-0.5" style="color:${dark ? '#94a3b8' : '#a1a1aa'}">${projCounts[p.id] || 0} khoản - ${fmtShort(projTotals[p.id] || 0)}</p>
               </div>
-              <button onClick=${() => { if (confirm('Xóa project "' + p.name + '"?')) onDelete(p.id); }}
+              <button onClick=${(e) => { e.stopPropagation(); if (confirm('Xóa project "' + p.name + '"?')) onDelete(p.id); }}
                 class="text-zinc-400 hover:text-red-500 transition-colors p-1">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
               </button>
             </div>
-          `)}
+          `;})
           ${adding ? html`
             <div class="px-4 py-3 bg-white dark:bg-zinc-800 rounded-xl border border-emerald-300 dark:border-emerald-700">
               <div class="flex gap-2 mb-2">
@@ -1684,6 +1726,7 @@ function App() {
   const [dateTo, setDateTo] = useState(() => today());
   const [modal, setModal] = useState(null);
   const [filterCat, setFilterCat] = useState('all');
+  const [filterProject, setFilterProject] = useState('');
   const [showQR, setShowQR] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showProjects, setShowProjects] = useState(false);
@@ -1790,6 +1833,7 @@ function App() {
 
   const filtered = useMemo(() => {
     let result = filterCat === 'all' ? rangeExpenses : rangeExpenses.filter(e => e.category === filterCat);
+    if (filterProject) result = result.filter(e => e.project_id === filterProject);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       result = result.filter(e =>
@@ -1799,7 +1843,7 @@ function App() {
       );
     }
     return result;
-  }, [rangeExpenses, filterCat, searchQuery]);
+  }, [rangeExpenses, filterCat, filterProject, searchQuery]);
 
   const rangeTotal = useMemo(() => rangeExpenses.filter(e => e.category !== SAVINGS_CAT).reduce((s, e) => s + e.amount, 0), [rangeExpenses]);
   const rangeSavings = useMemo(() => rangeExpenses.filter(e => e.category === SAVINGS_CAT).reduce((s, e) => s + e.amount, 0), [rangeExpenses]);
@@ -2079,6 +2123,17 @@ function App() {
             </div>
           </div>
         `}
+        ${filterProject && html`
+          <div class="px-4 mt-2">
+            <div class="px-3 py-2 rounded-xl flex items-center justify-between" style="background:${dark ? '#064e3b' : '#ecfdf5'};border:1px solid #10b981">
+              <span class="text-sm text-emerald-700 dark:text-emerald-300">
+                ${(projects.find(p => p.id === filterProject) || {}).emoji || '\u{1F4C1}'} ${(projects.find(p => p.id === filterProject) || {}).name || 'Project'}
+                <span class="text-xs ml-1 opacity-70">(${filtered.length} khoản - ${fmtShort(filtered.reduce((s,e) => s + e.amount, 0))})</span>
+              </span>
+              <button onClick=${() => setFilterProject('')} class="text-emerald-600 dark:text-emerald-400 text-sm font-medium px-2">Bỏ lọc</button>
+            </div>
+          </div>
+        `}
 
         <div class="px-4 mt-3">
           ${grouped.length === 0 && html`
@@ -2141,7 +2196,7 @@ function App() {
               <h2 class="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Projects</h2>
               <button onClick=${() => setShowProjects(false)} class="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 text-xl">\u00D7</button>
             </div>
-            <${ProjectPanel} projects=${projects} expenses=${expenses} onAdd=${addProject} onDelete=${deleteProject} inline=${true} />
+            <${ProjectPanel} projects=${projects} expenses=${expenses} onAdd=${addProject} onDelete=${deleteProject} inline=${true} onSelect=${(pid) => { setFilterProject(pid); setShowProjects(false); }} activeProject=${filterProject} />
           </div>
         </div>
       `}
