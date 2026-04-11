@@ -1631,7 +1631,12 @@ function LoginScreen({ onLogin }) {
         body: JSON.stringify({ user_code: trimmed, password })
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Lỗi'); setLoading(false); return; }
+      if (!res.ok) {
+        if (res.status === 409) setError('__dup__');
+        else if (res.status === 401) setError('__wrong__');
+        else setError(data.error || 'Lỗi');
+        setLoading(false); return;
+      }
       save('tc-token', data.token);
       save('tc-user', data.user_code);
       onLogin(data.user_code);
@@ -1694,7 +1699,21 @@ function LoginScreen({ onLogin }) {
             `}
           </button>
         </div>
-        ${error && html`<p class="text-xs text-red-500 mb-3">${error}</p>`}
+        ${error === '__dup__' && html`
+          <div class="text-sm text-red-500 mb-3">
+            Tên này đã có người dùng.<br/>
+            <button onClick=${() => { setMode('login'); setError(''); }} class="text-emerald-600 dark:text-emerald-400 font-medium underline">Đăng nhập</button>
+            <span class="mx-1">hoặc</span>
+            <button onClick=${() => { setMode('reset'); setError(''); }} class="text-emerald-600 dark:text-emerald-400 font-medium underline">Quên mật khẩu?</button>
+          </div>
+        `}
+        ${error === '__wrong__' && html`
+          <div class="text-sm text-red-500 mb-3">
+            Sai mật khẩu.<span class="mx-1"></span>
+            <button onClick=${() => { setMode('reset'); setError(''); }} class="text-emerald-600 dark:text-emerald-400 font-medium underline">Quên mật khẩu?</button>
+          </div>
+        `}
+        ${error && error !== '__dup__' && error !== '__wrong__' && html`<p class="text-sm text-red-500 mb-3">${error}</p>`}
         ${success && html`<p class="text-xs text-emerald-500 mb-3">${success}</p>`}
         <button onClick=${mode === 'reset' ? handleReset : handleSubmit}
           class="w-full py-3 rounded-xl bg-emerald-500 text-white font-semibold hover:bg-emerald-600 transition-colors active:scale-95 disabled:opacity-40 text-sm"
