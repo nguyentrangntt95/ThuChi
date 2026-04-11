@@ -251,10 +251,20 @@ def find_potential_duplicates(user_code, items):
 def _call_groq(payload):
     """Helper to call Groq API"""
     api_key = os.environ.get("GROQ_API_KEY", "")
+    if not api_key:
+        raise Exception("GROQ_API_KEY chưa được cấu hình")
     url = "https://api.groq.com/openai/v1/chat/completions"
     resp = http_requests.post(url, json=payload, headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        try:
+            err = resp.json()
+            msg = err.get("error", {}).get("message", resp.text[:200])
+        except:
+            msg = resp.text[:200]
+        raise Exception(f"Groq API lỗi ({resp.status_code}): {msg}")
     data = resp.json()
+    if not data.get("choices"):
+        raise Exception("Groq API trả về rỗng")
     text = data["choices"][0]["message"]["content"].strip()
     if text.startswith("```"):
         text = re.sub(r'^```\w*\n?', '', text)
@@ -279,7 +289,17 @@ def step1_extract(image_bytes, content_type):
     }
 
     text = _call_groq(payload)
-    items = json.loads(text)
+    if not text:
+        return []
+    try:
+        # Try to extract JSON from response
+        json_match = re.search(r'\[.*\]', text, re.DOTALL)
+        if json_match:
+            items = json.loads(json_match.group())
+        else:
+            items = json.loads(text)
+    except json.JSONDecodeError:
+        raise Exception(f"Không đọc được JSON từ AI: {text[:100]}")
     if not isinstance(items, list):
         items = [items]
 
@@ -331,7 +351,8 @@ def step2_categorize(items, user_code=None):
 
     try:
         text = _call_groq(payload)
-        categories = json.loads(text)
+        json_match = re.search(r'\[.*\]', text, re.DOTALL)
+        categories = json.loads(json_match.group() if json_match else text)
         if not isinstance(categories, list):
             categories = [categories]
 
