@@ -558,7 +558,7 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
 
 function PieChart({ data, grandTotal }) {
   const [active, setActive] = useState(-1);
-  const size = 200, cx = size/2, cy = size/2, r = 72;
+  const size = 180, cx = size/2, cy = size/2, r = 65;
   let cumAngle = -Math.PI / 2;
   const slices = data.map((d, i) => {
     const angle = (d.total / grandTotal) * Math.PI * 2;
@@ -584,13 +584,13 @@ function PieChart({ data, grandTotal }) {
           style="cursor:pointer;transition:opacity 0.15s"
           onMouseEnter=${() => setActive(s.idx)} onClick=${() => setActive(active === s.idx ? -1 : s.idx)} />
       `)}
-      <circle cx=${cx} cy=${cy} r="38" class="fill-white dark:fill-zinc-800" />
+      <circle cx=${cx} cy=${cy} r="34" class="fill-white dark:fill-zinc-800" />
       ${act ? html`
-        <text x=${cx} y=${cy-5} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200" style="font-size:12px;font-weight:700">${fmtShort(act.total)}</text>
-        <text x=${cx} y=${cy+9} text-anchor="middle" style="font-size:10px;font-weight:600" fill=${act.hex}>${act.emoji} ${Math.round(act.total/grandTotal*100)}%</text>
+        <text x=${cx} y=${cy-5} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200" style="font-size:11px;font-weight:700">${fmtShort(act.total)}</text>
+        <text x=${cx} y=${cy+8} text-anchor="middle" style="font-size:9px;font-weight:600" fill=${act.hex}>${act.emoji} ${Math.round(act.total/grandTotal*100)}%</text>
       ` : html`
-        <text x=${cx} y=${cy-3} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200" style="font-size:14px;font-weight:700">${fmtShort(grandTotal)}</text>
-        <text x=${cx} y=${cy+12} text-anchor="middle" class="fill-zinc-400" style="font-size:10px">VNĐ</text>
+        <text x=${cx} y=${cy-3} text-anchor="middle" class="fill-zinc-800 dark:fill-zinc-200" style="font-size:13px;font-weight:700">${fmtShort(grandTotal)}</text>
+        <text x=${cx} y=${cy+11} text-anchor="middle" class="fill-zinc-400" style="font-size:9px">VNĐ</text>
       `}
     </svg>
   `;
@@ -604,19 +604,15 @@ function CategoryChart({ expenses }) {
       .filter(c => c.total > 0)
       .sort((a, b) => b.total - a.total);
   }, [expenses]);
-  const savingsTotal = useMemo(() => expenses.filter(e => e.category === SAVINGS_CAT).reduce((s, e) => s + e.amount, 0), [expenses]);
-
-  if (spendingData.length === 0 && savingsTotal === 0) return null;
+  if (spendingData.length === 0) return null;
   const grandTotal = spendingData.reduce((s, d) => s + d.total, 0);
 
   return html`
     <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
       <div class="flex gap-3 items-start">
-        ${spendingData.length > 0 && html`
-          <div class="shrink-0" style="width:140px">
-            <${PieChart} data=${spendingData} grandTotal=${grandTotal} />
-          </div>
-        `}
+        <div class="shrink-0" style="width:140px">
+          <${PieChart} data=${spendingData} grandTotal=${grandTotal} />
+        </div>
         <div class="flex-1 min-w-0 space-y-1.5 pt-1">
           ${spendingData.map(d => html`
             <div key=${d.id} class="flex items-center gap-2">
@@ -625,13 +621,6 @@ function CategoryChart({ expenses }) {
               <span class="ml-auto text-xs font-semibold text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${fmtShort(d.total)} <span class="text-zinc-400 font-normal">${Math.round(d.total/grandTotal*100)}%</span></span>
             </div>
           `)}
-          ${savingsTotal > 0 && html`
-            <div class="flex items-center gap-2 pt-1.5 mt-1 border-t border-zinc-200 dark:border-zinc-700">
-              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:#14b8a6"></span>
-              <span class="text-xs text-teal-600 dark:text-teal-400 truncate">\u{1F4B0} Tiết kiệm</span>
-              <span class="ml-auto text-xs font-semibold text-teal-600 dark:text-teal-400 whitespace-nowrap">${fmtShort(savingsTotal)}</span>
-            </div>
-          `}
         </div>
       </div>
     </div>
@@ -1099,11 +1088,11 @@ function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, date
       ${expanded && html`
         <div class="fade-in">
           <${TextInsights} rangeExpenses=${rangeExpenses} allExpenses=${allExpenses} budgets=${budgets} dateFrom=${dateFrom} dateTo=${dateTo} />
-          <${DailySpendingChart} expenses=${rangeExpenses} />
-          <${MonthlyComparisonChart} expenses=${allExpenses} budgets=${budgets} />
-          <${CategoryTrendChart} expenses=${allExpenses} />
-          <${TopExpenses} expenses=${rangeExpenses} />
-          <${WeekdayChart} expenses=${rangeExpenses} />
+          <${DailySpendingChart} expenses=${rangeExpenses.filter(e => e.category !== SAVINGS_CAT)} />
+          <${MonthlyComparisonChart} expenses=${allExpenses.filter(e => e.category !== SAVINGS_CAT)} budgets=${budgets} />
+          <${CategoryTrendChart} expenses=${allExpenses.filter(e => e.category !== SAVINGS_CAT)} />
+          <${TopExpenses} expenses=${rangeExpenses.filter(e => e.category !== SAVINGS_CAT)} />
+          <${WeekdayChart} expenses=${rangeExpenses.filter(e => e.category !== SAVINGS_CAT)} />
         </div>
       `}
     </div>
