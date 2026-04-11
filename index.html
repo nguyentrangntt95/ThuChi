@@ -613,7 +613,7 @@ function CategoryChart({ expenses }) {
     <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
       <div class="flex gap-3 items-start">
         ${spendingData.length > 0 && html`
-          <div class="shrink-0">
+          <div class="shrink-0" style="width:140px">
             <${PieChart} data=${spendingData} grandTotal=${grandTotal} />
           </div>
         `}
