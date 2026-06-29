@@ -456,14 +456,6 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo, expenses = [] }) 
       d.setDate(d.getDate() - day + 1);
       onChangeFrom(d.toISOString().slice(0,10)); onChangeTo(today());
     }},
-    { label: 'Tuần 1', fn: () => { const m = today().slice(0,7); onChangeFrom(m+'-01'); onChangeTo(m+'-07'); }},
-    { label: 'Tuần 2', fn: () => { const m = today().slice(0,7); onChangeFrom(m+'-08'); onChangeTo(m+'-14'); }},
-    { label: 'Tuần 3', fn: () => { const m = today().slice(0,7); onChangeFrom(m+'-15'); onChangeTo(m+'-21'); }},
-    { label: 'Tuần 4', fn: () => {
-      const m = today().slice(0,7);
-      const last = new Date(parseInt(m.slice(0,4),10), parseInt(m.slice(5),10), 0).getDate();
-      onChangeFrom(m+'-22'); onChangeTo(m+'-'+String(last).padStart(2,'0'));
-    }},
     { label: 'Tháng này', fn: () => {
       const t = today(); onChangeFrom(t.slice(0,8) + '01'); onChangeTo(t);
     }},
@@ -478,6 +470,24 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo, expenses = [] }) 
       onChangeTo(dates.reduce((a, b) => a > b ? a : b));
     }},
   ];
+
+  const weekSelect = html`
+    <select onChange=${e => {
+      if (!e.target.value) return;
+      const w = parseInt(e.target.value, 10);
+      const m = today().slice(0, 7);
+      const last = new Date(parseInt(m.slice(0,4),10), parseInt(m.slice(5),10), 0).getDate();
+      const pad = n => String(n).padStart(2, '0');
+      const starts = [1, 8, 15, 22], ends = [7, 14, 21, last];
+      onChangeFrom(`${m}-${pad(starts[w-1])}`);
+      onChangeTo(`${m}-${pad(ends[w-1])}`);
+      setShowCustom(false);
+    }}
+      class="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 transition-colors focus:outline-none cursor-pointer">
+      <option value="">Chọn tuần</option>
+      ${[1,2,3,4].map(w => html`<option value=${w}>Tuần ${w}</option>`)}
+    </select>
+  `;
 
   const monthSelect = html`
     <select onChange=${e => {
@@ -504,6 +514,7 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo, expenses = [] }) 
             class="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 transition-colors">
             ${p.label}
           </button>
+          ${p.label === 'Tuần này' ? weekSelect : ''}
           ${p.label === 'Tháng này' ? monthSelect : ''}
         `)}
         <button onClick=${() => setShowCustom(!showCustom)}
