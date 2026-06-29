@@ -535,7 +535,7 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo, expenses = [] }) 
   `;
 }
 
-function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true, savings = 0, income: propIncome = 0, savingsTarget: propSavingsTarget = 0, dailyRemain = null }) {
+function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true, savings = 0, income: propIncome = 0, savingsTarget: propSavingsTarget = 0, dailyRemain = null, label = null }) {
   const budget = rawBudget || 15000000;
   const [editing, setEditing] = useState(false);
   const [incomeVal, setIncomeVal] = useState('');
@@ -544,9 +544,9 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
   const over = budget > 0 && total > budget;
   const warn = budget > 0 && total > budget * 0.8 && !over;
   const remain = budget > 0 ? budget - total : 0;
-  const monthLabel = monthCount > 1
+  const monthLabel = label || (monthCount > 1
     ? monthCount + ' tháng'
-    : (month.slice(0, 4) === new Date().getFullYear().toString() ? 'Tháng ' + parseInt(month.slice(5)) : month);
+    : (month.slice(0, 4) === new Date().getFullYear().toString() ? 'Tháng ' + parseInt(month.slice(5)) : month));
 
   const handleSave = () => {
     const inc = parseInt((incomeVal || '0').replace(/\D/g, '')) || 0;
@@ -2030,20 +2030,16 @@ function App() {
   }, [dateFrom, dateTo, budgets]);
   const monthBudget = budgetInfo.total;
 
-  // Daily-remaining mode: cho filter "Hôm nay", "Tuần này" và "Tuần 1-4" của tháng hiện tại.
+  // Daily-remaining mode: chỉ cho filter "Hôm nay" và "Tuần này".
   // Còn = (tiền tháng - tiết kiệm - đã chi trong tháng) / 7 ngày, để số chạy theo thực tế chi tiêu.
   const dailyInfo = useMemo(() => {
     const t = today();
     const m = t.slice(0, 7);
     const wd = new Date(); const day = wd.getDay() || 7; wd.setDate(wd.getDate() - day + 1);
     const weekStart = wd.toISOString().slice(0, 10);
-    const lastDay = new Date(parseInt(m.slice(0,4),10), parseInt(m.slice(5),10), 0).getDate();
-    const pad = n => String(n).padStart(2, '0');
-    const weekRanges = [[1,7],[8,14],[15,21],[22,lastDay]].map(([s,e]) => [`${m}-${pad(s)}`, `${m}-${pad(Math.min(e,lastDay))}`]);
     const isToday = dateFrom === t && dateTo === t;
     const isThisWeek = dateFrom === weekStart && dateTo === t;
-    const isWeekN = weekRanges.some(([f, to]) => f === dateFrom && to === dateTo);
-    if (!isToday && !isThisWeek && !isWeekN) return null;
+    if (!isToday && !isThisWeek) return null;
 
     const DEFAULT_BUDGET = 15000000;
     const b = budgets[m];
@@ -2057,6 +2053,47 @@ function App() {
     const dailyRemain = (mBudget - monthSpent) / 7;
     return { month: m, monthBudget: mBudget, monthSpent, monthSavings, dailyRemain, income, savings_target };
   }, [dateFrom, dateTo, budgets, expenses]);
+
+  // Week-budget mode: cho filter "Tuần 1-4" của tháng hiện tại.
+  // Budget tuần chia cuốn chiếu: T1 = B/4, T2 = (B - chi T1)/3, T3 = (còn lại)/2, T4 = toàn bộ còn lại.
+  const weekInfo = useMemo(() => {
+    const t = today();
+    const m = t.slice(0, 7);
+    const lastDay = new Date(parseInt(m.slice(0,4),10), parseInt(m.slice(5),10), 0).getDate();
+    const pad = n => String(n).padStart(2, '0');
+    const weekRanges = [[1,7],[8,14],[15,21],[22,lastDay]].map(([s,e]) => [`${m}-${pad(s)}`, `${m}-${pad(Math.min(e,lastDay))}`]);
+    const idx = weekRanges.findIndex(([f, to]) => f === dateFrom && to === dateTo);
+    if (idx === -1) return null;
+
+    const DEFAULT_BUDGET = 15000000;
+    const b = budgets[m];
+    let mBudget = DEFAULT_BUDGET;
+    if (b) {
+      if (typeof b === 'number') mBudget = b;
+      else mBudget = b.amount || (b.income ? b.income - (b.savings_target || 0) : DEFAULT_BUDGET);
+    }
+    const spendIn = (f, to) => expenses.filter(e => e.date >= f && e.date <= to && e.category !== SAVINGS_CAT).reduce((s, e) => s + e.amount, 0);
+    const saveIn = (f, to) => expenses.filter(e => e.date >= f && e.date <= to && e.category === SAVINGS_CAT).reduce((s, e) => s + e.amount, 0);
+
+    let remaining = mBudget;
+    for (let i = 0; i < idx; i++) remaining -= spendIn(weekRanges[i][0], weekRanges[i][1]);
+    const weekBudget = remaining / (4 - idx);
+    const weekSpend = spendIn(weekRanges[idx][0], weekRanges[idx][1]);
+    const weekSavings = saveIn(weekRanges[idx][0], weekRanges[idx][1]);
+    return { weekNum: idx + 1, weekBudget, weekSpend, weekSavings, month: m };
+  }, [dateFrom, dateTo, budgets, expenses]);
+
+  // Chọn props cho BudgetBar theo chế độ đang xem
+  const budgetBarProps = weekInfo ? {
+    total: weekInfo.weekSpend, budget: weekInfo.weekBudget, month: weekInfo.month,
+    monthCount: 1, fullMonth: false, savings: weekInfo.weekSavings, income: 0, savingsTarget: 0,
+    dailyRemain: null, label: 'Tuần ' + weekInfo.weekNum + ' · Tháng ' + parseInt(weekInfo.month.slice(5)),
+  } : {
+    total: rangeTotal, budget: monthBudget, month: budgetMonth,
+    monthCount: budgetInfo.months, fullMonth: budgetInfo.fullMonth, savings: rangeSavings,
+    income: budgetInfo.income, savingsTarget: budgetInfo.savings_target,
+    dailyRemain: dailyInfo ? dailyInfo.dailyRemain : null, label: null,
+  };
 
   const addExpense = async (data) => {
     catMemory.learn(data.detail, data.category);
@@ -2181,7 +2218,7 @@ function App() {
 
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} expenses=${expenses} />
-        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} month=${budgetMonth} dark=${dark} monthCount=${budgetInfo.months} fullMonth=${budgetInfo.fullMonth} savings=${rangeSavings} income=${budgetInfo.income} savingsTarget=${budgetInfo.savings_target} dailyRemain=${dailyInfo ? dailyInfo.dailyRemain : null} />
+        <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} />
         ${visibleDups.length > 0 && html`
           <div class="px-4 mt-3 space-y-2">
             ${visibleDups.map(group => {
