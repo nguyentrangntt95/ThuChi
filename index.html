@@ -589,8 +589,10 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
         </div>
         <div class="text-right">
           <p class="text-lg font-bold" style="color:${over ? '#ef4444' : '#10b981'}">${Math.round(pct)}%</p>
-          <p class="text-xs" style="color:${over ? '#f87171' : '#10b981'}">
-            ${over ? 'Vượt ' + fmtShort(total - budget) : (dailyRemain != null ? 'Còn ' + fmtShort(dailyRemain) + '/ngày' : 'Còn ' + fmtShort(remain))}
+          <p class="text-xs" style="color:${(dailyRemain != null ? dailyRemain < 0 : over) ? '#f87171' : '#10b981'}">
+            ${dailyRemain != null
+              ? (dailyRemain >= 0 ? 'Còn ' + fmtShort(dailyRemain) + '/ngày' : 'Âm ' + fmtShort(-dailyRemain) + '/ngày')
+              : (over ? 'Vượt ' + fmtShort(total - budget) : 'Còn ' + fmtShort(remain))}
           </p>
         </div>
       </div>
@@ -2163,18 +2165,7 @@ function App() {
 
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} expenses=${expenses} />
-        <${BudgetBar}
-          total=${dailyInfo ? dailyInfo.monthSpent : rangeTotal}
-          budget=${dailyInfo ? dailyInfo.monthBudget : monthBudget}
-          onSetBudget=${setBudget}
-          month=${dailyInfo ? dailyInfo.month : budgetMonth}
-          dark=${dark}
-          monthCount=${dailyInfo ? 1 : budgetInfo.months}
-          fullMonth=${dailyInfo ? true : budgetInfo.fullMonth}
-          savings=${dailyInfo ? dailyInfo.monthSavings : rangeSavings}
-          income=${dailyInfo ? dailyInfo.income : budgetInfo.income}
-          savingsTarget=${dailyInfo ? dailyInfo.savings_target : budgetInfo.savings_target}
-          dailyRemain=${dailyInfo ? dailyInfo.dailyRemain : null} />
+        <${BudgetBar} total=${rangeTotal} budget=${monthBudget} onSetBudget=${setBudget} month=${budgetMonth} dark=${dark} monthCount=${budgetInfo.months} fullMonth=${budgetInfo.fullMonth} savings=${rangeSavings} income=${budgetInfo.income} savingsTarget=${budgetInfo.savings_target} dailyRemain=${dailyInfo ? dailyInfo.dailyRemain : null} />
         ${visibleDups.length > 0 && html`
           <div class="px-4 mt-3 space-y-2">
             ${visibleDups.map(group => {
