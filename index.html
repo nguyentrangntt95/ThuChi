@@ -456,12 +456,13 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo, expenses = [] }) 
       d.setDate(d.getDate() - day + 1);
       onChangeFrom(d.toISOString().slice(0,10)); onChangeTo(today());
     }},
-    { label: 'Tuần trước', fn: () => {
-      const d = new Date(); const day = d.getDay() || 7;
-      d.setDate(d.getDate() - day + 1 - 7);
-      const first = d.toISOString().slice(0,10);
-      d.setDate(d.getDate() + 6);
-      onChangeFrom(first); onChangeTo(d.toISOString().slice(0,10));
+    { label: 'Tuần 1', fn: () => { const m = today().slice(0,7); onChangeFrom(m+'-01'); onChangeTo(m+'-07'); }},
+    { label: 'Tuần 2', fn: () => { const m = today().slice(0,7); onChangeFrom(m+'-08'); onChangeTo(m+'-14'); }},
+    { label: 'Tuần 3', fn: () => { const m = today().slice(0,7); onChangeFrom(m+'-15'); onChangeTo(m+'-21'); }},
+    { label: 'Tuần 4', fn: () => {
+      const m = today().slice(0,7);
+      const last = new Date(parseInt(m.slice(0,4),10), parseInt(m.slice(5),10), 0).getDate();
+      onChangeFrom(m+'-22'); onChangeTo(m+'-'+String(last).padStart(2,'0'));
     }},
     { label: 'Tháng này', fn: () => {
       const t = today(); onChangeFrom(t.slice(0,8) + '01'); onChangeTo(t);
@@ -2018,17 +2019,21 @@ function App() {
   }, [dateFrom, dateTo, budgets]);
   const monthBudget = budgetInfo.total;
 
-  // Daily-remaining mode: only for "Hôm nay" / "Tuần này" filters.
+  // Daily-remaining mode: cho filter "Hôm nay", "Tuần này" và "Tuần 1-4" của tháng hiện tại.
   // Còn = (tiền tháng - tiết kiệm - đã chi trong tháng) / 7 ngày, để số chạy theo thực tế chi tiêu.
   const dailyInfo = useMemo(() => {
     const t = today();
+    const m = t.slice(0, 7);
     const wd = new Date(); const day = wd.getDay() || 7; wd.setDate(wd.getDate() - day + 1);
     const weekStart = wd.toISOString().slice(0, 10);
+    const lastDay = new Date(parseInt(m.slice(0,4),10), parseInt(m.slice(5),10), 0).getDate();
+    const pad = n => String(n).padStart(2, '0');
+    const weekRanges = [[1,7],[8,14],[15,21],[22,lastDay]].map(([s,e]) => [`${m}-${pad(s)}`, `${m}-${pad(Math.min(e,lastDay))}`]);
     const isToday = dateFrom === t && dateTo === t;
-    const isWeek = dateFrom === weekStart && dateTo === t;
-    if (!isToday && !isWeek) return null;
+    const isThisWeek = dateFrom === weekStart && dateTo === t;
+    const isWeekN = weekRanges.some(([f, to]) => f === dateFrom && to === dateTo);
+    if (!isToday && !isThisWeek && !isWeekN) return null;
 
-    const m = t.slice(0, 7);
     const DEFAULT_BUDGET = 15000000;
     const b = budgets[m];
     let mBudget = DEFAULT_BUDGET, income = 0, savings_target = 0;
