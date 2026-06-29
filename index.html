@@ -447,7 +447,7 @@ function findDuplicates(expenses, date, amount) {
 
 // ── Components ──
 
-function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
+function DateRangePicker({ from, to, onChangeFrom, onChangeTo, expenses = [] }) {
   const [showCustom, setShowCustom] = useState(false);
   const presets = [
     { label: 'Hôm nay', fn: () => { const t = today(); onChangeFrom(t); onChangeTo(t); } },
@@ -470,8 +470,30 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
       const y = new Date().getFullYear();
       onChangeFrom(y+'-01-01'); onChangeTo(today());
     }},
-    { label: 'Tất cả', fn: () => { onChangeFrom('2000-01-01'); onChangeTo('2099-12-31'); } },
+    { label: 'Tất cả', fn: () => {
+      const dates = expenses.map(e => e.date).filter(Boolean);
+      if (!dates.length) { onChangeFrom(today()); onChangeTo(today()); return; }
+      onChangeFrom(dates.reduce((a, b) => a < b ? a : b));
+      onChangeTo(dates.reduce((a, b) => a > b ? a : b));
+    }},
   ];
+
+  const monthSelect = html`
+    <select onChange=${e => {
+      if (!e.target.value) return;
+      const m = parseInt(e.target.value, 10);
+      const y = new Date().getFullYear();
+      const mm = String(m).padStart(2, '0');
+      const last = new Date(y, m, 0).getDate();
+      onChangeFrom(`${y}-${mm}-01`);
+      onChangeTo(`${y}-${mm}-${String(last).padStart(2,'0')}`);
+      setShowCustom(false);
+    }}
+      class="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 transition-colors focus:outline-none cursor-pointer">
+      <option value="">Chọn tháng</option>
+      ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m => html`<option value=${m}>Tháng ${m}</option>`)}
+    </select>
+  `;
 
   return html`
     <div class="px-4 pt-3">
@@ -481,21 +503,8 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo }) {
             class="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 transition-colors">
             ${p.label}
           </button>
+          ${p.label === 'Tháng này' ? monthSelect : ''}
         `)}
-        <select onChange=${e => {
-          if (!e.target.value) return;
-          const m = parseInt(e.target.value, 10);
-          const y = new Date().getFullYear();
-          const mm = String(m).padStart(2, '0');
-          const last = new Date(y, m, 0).getDate();
-          onChangeFrom(`${y}-${mm}-01`);
-          onChangeTo(`${y}-${mm}-${String(last).padStart(2,'0')}`);
-          setShowCustom(false);
-        }}
-          class="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 transition-colors focus:outline-none cursor-pointer">
-          <option value="">Chọn tháng</option>
-          ${[1,2,3,4,5,6,7,8,9,10,11,12].map(m => html`<option value=${m}>Tháng ${m}</option>`)}
-        </select>
         <button onClick=${() => setShowCustom(!showCustom)}
           class="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${showCustom ? 'bg-zinc-800 dark:bg-zinc-200 text-white dark:text-zinc-800' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400'}">
           Tùy chọn
@@ -2153,7 +2162,7 @@ function App() {
       </header>
 
       <main class="max-w-lg mx-auto pb-24">
-        <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} />
+        <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} expenses=${expenses} />
         <${BudgetBar}
           total=${dailyInfo ? dailyInfo.monthSpent : rangeTotal}
           budget=${dailyInfo ? dailyInfo.monthBudget : monthBudget}
