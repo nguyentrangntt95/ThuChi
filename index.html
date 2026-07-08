@@ -2104,8 +2104,25 @@ function App() {
     }
     const monthSpent = expenses.filter(e => e.date.slice(0, 7) === m && e.category !== SAVINGS_CAT).reduce((s, e) => s + e.amount, 0);
     const monthSavings = expenses.filter(e => e.date.slice(0, 7) === m && e.category === SAVINGS_CAT).reduce((s, e) => s + e.amount, 0);
-    const dailyRemain = (mBudget - monthSpent) / 7;
-    return { month: m, monthBudget: mBudget, monthSpent, monthSavings, dailyRemain, income, savings_target };
+
+    // Cuốn chiếu 2 tầng: tháng -> tuần (4 khối 7 ngày) -> ngày trong tuần
+    // Tuần hiện tại: budget = (ngân sách tháng - đã chi các tuần trước) / số tuần còn lại
+    // Ngày hôm nay: budget = (budget tuần - đã chi các ngày trước trong tuần) / số ngày còn lại trong tuần
+    const pad = n => String(n).padStart(2, '0');
+    const lastDay = new Date(parseInt(m.slice(0, 4), 10), parseInt(m.slice(5), 10), 0).getDate();
+    const weekRanges = [[1, 7], [8, 14], [15, 21], [22, lastDay]].map(([s, e]) => [`${m}-${pad(s)}`, `${m}-${pad(Math.min(e, lastDay))}`]);
+    const spendIn = (f, to) => expenses.filter(e => e.date >= f && e.date <= to && e.category !== SAVINGS_CAT).reduce((s, e) => s + e.amount, 0);
+    const todayDate = parseInt(t.slice(8, 10), 10);
+    const wIdx = Math.min(3, Math.floor((todayDate - 1) / 7));
+    let weekRemainBudget = mBudget;
+    for (let i = 0; i < wIdx; i++) weekRemainBudget -= spendIn(weekRanges[i][0], weekRanges[i][1]);
+    const weekBudget = weekRemainBudget / (4 - wIdx);
+    const wStartDay = parseInt(weekRanges[wIdx][0].slice(8, 10), 10);
+    const wEndDay = parseInt(weekRanges[wIdx][1].slice(8, 10), 10);
+    const spentBeforeTodayInWeek = todayDate > wStartDay ? spendIn(weekRanges[wIdx][0], `${m}-${pad(todayDate - 1)}`) : 0;
+    const daysLeftInWeek = Math.max(1, wEndDay - todayDate + 1);
+    const dailyRemain = (weekBudget - spentBeforeTodayInWeek) / daysLeftInWeek;
+    return { month: m, monthBudget: mBudget, monthSpent, monthSavings, dailyRemain, weekBudget, income, savings_target };
   }, [dateFrom, dateTo, budgets, expenses]);
 
   // Week-budget mode: cho filter "Tuần 1-4" của tháng hiện tại.
