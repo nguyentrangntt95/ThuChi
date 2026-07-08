@@ -603,8 +603,8 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
           <p class="text-lg font-bold" style="color:${over ? '#ef4444' : '#10b981'}">${Math.round(pct)}%</p>
           <p class="text-xs" style="color:${(dailyRemain != null ? dailyRemain < 0 : over) ? '#f87171' : '#10b981'}">
             ${dailyRemain != null
-              ? (dailyRemain >= 0 ? 'Còn ' + fmtShort(dailyRemain) + '/ngày' : 'Âm ' + fmtShort(-dailyRemain) + '/ngày')
-              : (over ? 'Vượt ' + fmtShort(total - budget) : 'Còn ' + fmtShort(remain))}
+              ? (dailyRemain >= 0 ? 'Còn ' + fmtShort(dailyRemain) + '/ngày' : '⚠ Hết quota')
+              : (over ? '⚠ Hết quota · vượt ' + fmtShort(total - budget) : 'Còn ' + fmtShort(remain))}
           </p>
         </div>
       </div>
