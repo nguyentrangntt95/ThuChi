@@ -1144,8 +1144,10 @@ function ProjectPanel({ projects, expenses, onAdd, onDelete, inline = false, onS
   `;
 }
 
-function SpendingCalendar({ expenses, dateFrom }) {
-  const m = (dateFrom && dateFrom.length >= 7) ? dateFrom.slice(0, 7) : today().slice(0, 7);
+function SpendingCalendar({ expenses, dateFrom, dateTo }) {
+  // Bám theo tháng mới nhất trong khoảng lọc (vd "Năm nay" -> tháng hiện tại)
+  const m = (dateTo && dateTo.length >= 7) ? dateTo.slice(0, 7)
+    : (dateFrom && dateFrom.length >= 7) ? dateFrom.slice(0, 7) : today().slice(0, 7);
   const year = parseInt(m.slice(0, 4), 10);
   const mon = parseInt(m.slice(5, 7), 10);
   const daysInMonth = new Date(year, mon, 0).getDate();
@@ -1225,7 +1227,7 @@ function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, date
       ${expanded && html`
         <div class="fade-in">
           <${TextInsights} rangeExpenses=${rangeExpenses} allExpenses=${allExpenses} budgets=${budgets} dateFrom=${dateFrom} dateTo=${dateTo} />
-          <${SpendingCalendar} expenses=${allExpenses} dateFrom=${dateFrom} />
+          <${SpendingCalendar} expenses=${allExpenses} dateFrom=${dateFrom} dateTo=${dateTo} />
           <${DailySpendingChart} expenses=${rangeExpenses.filter(e => e.category !== SAVINGS_CAT)} />
           <${MonthlyComparisonChart} expenses=${allExpenses.filter(e => e.category !== SAVINGS_CAT)} budgets=${budgets} />
           <${CategoryTrendChart} expenses=${allExpenses.filter(e => e.category !== SAVINGS_CAT)} />
