@@ -1254,7 +1254,15 @@ function SpendingCalendar({ expenses, dateFrom }) {
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
   const activeDays = Object.keys(byDay).length;
   const monthTotal = Object.values(byDay).reduce((s, v) => s + v, 0);
+  const maxDay = Math.max(0, ...Object.values(byDay));
   const gridStyle = 'display:grid;grid-template-columns:repeat(7,1fr);gap:4px';
+  // Số tiền trong ô: làm tròn LÊN cho gọn mắt
+  const fmtCell = (n) => {
+    const a = Math.abs(n);
+    if (a >= 950000) { const m = Math.ceil(a / 100000) / 10; return (m % 1 === 0 ? m.toFixed(0) : m.toFixed(1)) + 'M'; }
+    if (a >= 1000) return Math.ceil(a / 1000) + 'k';
+    return Math.ceil(a).toString();
+  };
 
   return html`
     <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
@@ -1267,12 +1275,15 @@ function SpendingCalendar({ expenses, dateFrom }) {
           if (!d) return html`<div key=${'b' + i}></div>`;
           const sp = byDay[d] || 0;
           const isToday = isCurMonth && d === todayD;
-          const bg = sp > 0 ? 'rgba(244,63,94,0.13)' : 'rgba(128,128,128,0.08)';
+          // Đậm nhạt theo mức chi: chi càng nhiều nền càng đậm
+          const ratio = maxDay > 0 ? sp / maxDay : 0;
+          const alpha = sp > 0 ? (0.12 + ratio * 0.48).toFixed(2) : 0;
+          const bg = sp > 0 ? `rgba(244,63,94,${alpha})` : 'rgba(128,128,128,0.07)';
           const outline = isToday ? 'outline:2px solid #3b82f6;outline-offset:-2px;' : '';
           return html`
             <div key=${d} style="display:flex;flex-direction:column;align-items:center;border-radius:8px;min-height:44px;padding:3px 1px;background:${bg};${outline}">
               <span style="font-size:10px;line-height:1.3;${isToday ? 'color:#3b82f6;font-weight:700' : 'color:#9ca3af'}">${d}</span>
-              ${sp > 0 ? html`<span style="font-size:9px;font-weight:700;color:#f43f5e;margin-top:auto;padding-bottom:1px">${fmtShort(sp)}</span>` : ''}
+              ${sp > 0 ? html`<span style="font-size:9px;font-weight:700;color:#f43f5e;margin-top:auto;padding-bottom:1px">${fmtCell(sp)}</span>` : ''}
             </div>
           `;
         })}
