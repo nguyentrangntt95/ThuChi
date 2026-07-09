@@ -245,6 +245,17 @@ const fmtShort = (n) => {
 };
 const today = () => new Date().toISOString().slice(0, 10);
 const monthOf = (d) => d.slice(0, 7);
+// Các tuần trong tháng theo mốc Thứ 2 (Mon->Sun), cắt theo ranh giới tháng.
+// Trả về mảng [fromISO, toISO]; tuần đầu/cuối có thể ngắn hơn 7 ngày.
+const monthWeeks = (m) => {
+  const y = parseInt(m.slice(0, 4), 10), mo = parseInt(m.slice(5), 10);
+  const lastDay = new Date(y, mo, 0).getDate();
+  const pad = n => String(n).padStart(2, '0');
+  const segs = []; let start = 1;
+  for (let d = 2; d <= lastDay; d++) { if (new Date(y, mo - 1, d).getDay() === 1) { segs.push([start, d - 1]); start = d; } }
+  segs.push([start, lastDay]);
+  return segs.map(([s, e]) => [`${m}-${pad(s)}`, `${m}-${pad(e)}`]);
+};
 
 // Safe math evaluator for amount field (supports + - * /)
 const evalAmount = (str) => {
@@ -471,21 +482,19 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo, expenses = [] }) 
     }},
   ];
 
+  const curWeeks = monthWeeks(today().slice(0, 7));
   const weekSelect = html`
     <select onChange=${e => {
       if (!e.target.value) return;
       const w = parseInt(e.target.value, 10);
-      const m = today().slice(0, 7);
-      const last = new Date(parseInt(m.slice(0,4),10), parseInt(m.slice(5),10), 0).getDate();
-      const pad = n => String(n).padStart(2, '0');
-      const starts = [1, 8, 15, 22], ends = [7, 14, 21, last];
-      onChangeFrom(`${m}-${pad(starts[w-1])}`);
-      onChangeTo(`${m}-${pad(ends[w-1])}`);
+      const [f, t] = curWeeks[w - 1];
+      onChangeFrom(f);
+      onChangeTo(t);
       setShowCustom(false);
     }}
       class="shrink-0 px-3 py-1.5 rounded-full text-xs font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-900/30 dark:hover:text-emerald-400 transition-colors focus:outline-none cursor-pointer">
       <option value="">Chọn tuần</option>
-      ${[1,2,3,4].map(w => html`<option value=${w}>Tuần ${w}</option>`)}
+      ${curWeeks.map((_, i) => html`<option value=${i + 1}>Tuần ${i + 1}</option>`)}
     </select>
   `;
 
@@ -2054,14 +2063,12 @@ function App() {
     return { month: m, monthBudget: mBudget, monthSpent, monthSavings, dailyRemain, weekBudget, income, savings_target };
   }, [dateFrom, dateTo, budgets, expenses]);
 
-  // Week-budget mode: cho filter "Tuần 1-4" của tháng hiện tại.
-  // Budget tuần chia cuốn chiếu: T1 = B/4, T2 = (B - chi T1)/3, T3 = (còn lại)/2, T4 = toàn bộ còn lại.
+  // Week-budget mode: cho filter "Tuần X" (Thứ 2 -> CN) của tháng hiện tại.
+  // Budget tuần cuốn chiếu: tuần hiện tại = (ngân sách tháng - đã chi các tuần trước) / số tuần còn lại.
   const weekInfo = useMemo(() => {
     const t = today();
     const m = t.slice(0, 7);
-    const lastDay = new Date(parseInt(m.slice(0,4),10), parseInt(m.slice(5),10), 0).getDate();
-    const pad = n => String(n).padStart(2, '0');
-    const weekRanges = [[1,7],[8,14],[15,21],[22,lastDay]].map(([s,e]) => [`${m}-${pad(s)}`, `${m}-${pad(Math.min(e,lastDay))}`]);
+    const weekRanges = monthWeeks(m);
     const idx = weekRanges.findIndex(([f, to]) => f === dateFrom && to === dateTo);
     if (idx === -1) return null;
 
@@ -2077,7 +2084,7 @@ function App() {
 
     let remaining = mBudget;
     for (let i = 0; i < idx; i++) remaining -= spendIn(weekRanges[i][0], weekRanges[i][1]);
-    const weekBudget = remaining / (4 - idx);
+    const weekBudget = remaining / (weekRanges.length - idx);
     const weekSpend = spendIn(weekRanges[idx][0], weekRanges[idx][1]);
     const weekSavings = saveIn(weekRanges[idx][0], weekRanges[idx][1]);
     return { weekNum: idx + 1, weekBudget, weekSpend, weekSavings, month: m };
