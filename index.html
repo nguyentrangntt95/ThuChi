@@ -999,9 +999,9 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
       });
 
       if (diff > 0) {
-        result.push({ icon: '\u{1F4C8}', title: 'Tăng ' + diffPct + '% so với kỳ trước', subtitle: '+' + fmtShort(diff), details: topChanges, color: '#ef4444' });
+        result.push({ icon: '\u{1F4C8}', title: 'Tăng ' + diffPct + '% so kỳ trước', subtitle: '+' + fmtShort(diff), details: topChanges, color: '#ef4444' });
       } else if (diff < 0) {
-        result.push({ icon: '\u{1F4C9}', title: 'Giảm ' + diffPct + '% so với kỳ trước', subtitle: '-' + fmtShort(Math.abs(diff)), details: topChanges, color: '#10b981' });
+        result.push({ icon: '\u{1F4C9}', title: 'Giảm ' + diffPct + '% so kỳ trước', subtitle: '-' + fmtShort(Math.abs(diff)), details: topChanges, color: '#10b981' });
       }
     }
 
@@ -1023,96 +1023,9 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
     const avgPerTx = txCount > 0 ? Math.round(total / txCount) : 0;
     if (activeDays > 1 || txCount > 0) {
       const lines = [];
-      if (activeDays > 1) lines.push(activeDays + ' ngày chi tiêu, TB ' + fmtShort(avgPerActiveDay) + '/ngày');
-      if (txCount > 0) lines.push(txCount + ' giao dịch, TB ' + fmtShort(avgPerTx) + '/giao dịch');
+      if (activeDays > 1) lines.push(activeDays + ' ngày · TB ' + fmtShort(avgPerActiveDay) + '/ngày');
+      if (txCount > 0) lines.push(txCount + ' giao dịch · TB ' + fmtShort(avgPerTx) + '/lần');
       result.push({ icon: '\u{1F4CA}', title: 'Thống kê', details: lines, color: '#6366f1' });
-    }
-
-    // 4. Actionable suggestions
-    if (total > 0 && prevTotal > 0) {
-      const curCatTotals = {};
-      spendingExpenses.forEach(e => { curCatTotals[e.category] = (curCatTotals[e.category] || 0) + e.amount; });
-      const sortedCats = Object.entries(curCatTotals).sort((a,b) => b[1] - a[1]);
-      const tips = [];
-      // Top category > 40% of spending
-      if (sortedCats.length > 0) {
-        const [topId, topAmt] = sortedCats[0];
-        const topPct = Math.round(topAmt / total * 100);
-        const topCat = catMap[topId] || catMap.other;
-        if (topPct > 40) {
-          const save10 = Math.round(topAmt * 0.1);
-          tips.push(topCat.emoji + ' ' + topCat.name + ' chiếm ' + topPct + '%. Giảm 10% = tiết kiệm ' + fmtShort(save10) + '/tháng');
-        }
-      }
-      // Weekend spending higher than weekday
-      const weekendTotal = spendingExpenses.filter(e => { const d = new Date(e.date + 'T00:00:00').getDay(); return d === 0 || d === 6; }).reduce((s,e) => s + e.amount, 0);
-      const weekdayTotal = total - weekendTotal;
-      const weekendDays = [...new Set(spendingExpenses.filter(e => { const d = new Date(e.date + 'T00:00:00').getDay(); return d === 0 || d === 6; }).map(e => e.date))].length || 1;
-      const weekdayDays = Math.max(1, activeDays - weekendDays);
-      const weekendAvg = weekendTotal / weekendDays;
-      const weekdayAvg = weekdayTotal / weekdayDays;
-      if (weekendAvg > weekdayAvg * 1.5 && weekendTotal > 500000) {
-        tips.push('Cuối tuần chi gấp ' + (weekendAvg / weekdayAvg).toFixed(1) + 'x ngày thường. Giảm cuối tuần = tiết kiệm ~' + fmtShort(Math.round((weekendAvg - weekdayAvg) * weekendDays)) + '/tháng');
-      }
-      // Small transactions add up
-      const smallTxs = spendingExpenses.filter(e => e.amount <= 100000);
-      const smallTotal = smallTxs.reduce((s,e) => s + e.amount, 0);
-      const smallPct = Math.round(smallTotal / total * 100);
-      if (smallTxs.length >= 10 && smallPct > 15) {
-        tips.push(smallTxs.length + ' khoản nhỏ (<100k) = ' + fmtShort(smallTotal) + ' (' + smallPct + '%). Cắt giảm sẽ tiết kiệm đáng kể');
-      }
-
-      // Category vs 3-month average
-      const threeMonthsAgo = new Date(fromD);
-      threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
-      const threeMonthStr = threeMonthsAgo.toISOString().slice(0, 10);
-      const prev3m = allExpenses.filter(e => e.date >= threeMonthStr && e.date < dateFrom && e.category !== SAVINGS_CAT);
-      if (prev3m.length > 10) {
-        const prev3mCats = {};
-        prev3m.forEach(e => { prev3mCats[e.category] = (prev3mCats[e.category] || 0) + e.amount; });
-        const prev3mMonths = new Set(prev3m.map(e => e.date.slice(0, 7))).size || 1;
-        for (const [catId, catTotal] of sortedCats) {
-          const avgMonthly = (prev3mCats[catId] || 0) / prev3mMonths;
-          if (avgMonthly > 0 && catTotal > avgMonthly * 1.3 && catTotal - avgMonthly > 200000) {
-            const cat = catMap[catId] || catMap.other;
-            tips.push(cat.emoji + ' ' + cat.name + ' cao hơn TB 3 tháng ' + Math.round((catTotal / avgMonthly - 1) * 100) + '% (TB: ' + fmtShort(Math.round(avgMonthly)) + ' → nay: ' + fmtShort(catTotal) + ')');
-            break;
-          }
-        }
-      }
-
-      if (tips.length > 0) {
-        result.push({ icon: '\u{1F4A1}', title: 'Gợi ý tiết kiệm', details: tips, color: '#f59e0b' });
-      }
-    }
-
-    // 5. Budget progress + daily allowance
-    const fromMonth = dateFrom.slice(0, 7);
-    const b = budgets[fromMonth];
-    const budgetAmt = b ? (typeof b === 'number' ? b : (b.amount || 0)) : 0;
-    const income = b && typeof b === 'object' ? (b.income || 0) : 0;
-    const savTarget = b && typeof b === 'object' ? (b.savings_target || 0) : 0;
-    if (budgetAmt > 0) {
-      const fromDate = new Date(dateFrom + 'T00:00:00');
-      const daysInMonth = new Date(fromDate.getFullYear(), fromDate.getMonth() + 1, 0).getDate();
-      const today = new Date();
-      const dayOfMonth = today.getDate();
-      const daysLeft = Math.max(0, daysInMonth - dayOfMonth);
-      const remain = budgetAmt - total;
-      const progressLines = [];
-      if (remain > 0 && daysLeft > 0) {
-        const dailyAllow = Math.round(remain / daysLeft);
-        progressLines.push('Còn ' + fmtShort(remain) + ' cho ' + daysLeft + ' ngày → ' + fmtShort(dailyAllow) + '/ngày');
-        if (income > 0) {
-          const savingRate = Math.round((income - total) / income * 100);
-          progressLines.push('Tỷ lệ tiết kiệm hiện tại: ' + savingRate + '% (mục tiêu: ' + Math.round(savTarget / income * 100) + '%)');
-        }
-      } else if (remain <= 0) {
-        progressLines.push('Đã vượt budget ' + fmtShort(Math.abs(remain)) + '. Hạn chế chi tiêu ' + daysLeft + ' ngày còn lại!');
-      }
-      if (progressLines.length > 0) {
-        result.push({ icon: '\u{1F3AF}', title: 'Tiến độ tháng', details: progressLines, color: '#6366f1' });
-      }
     }
 
     return result;
