@@ -133,6 +133,10 @@ def get_user_code():
 
 # ── AI Receipt Scanner (3-step pipeline) ──
 
+# llama-4-scout was decommissioned by Groq on 2026-07-17
+VISION_MODEL = "qwen/qwen3.6-27b"
+TEXT_MODEL = "openai/gpt-oss-120b"
+
 # Step 1: Pure extraction - OCR text from image
 EXTRACT_PROMPT = """Bạn là trợ lý đọc ảnh hóa đơn/chi tiêu. Hãy xem ảnh và trích xuất TẤT CẢ các khoản chi tiêu dưới dạng text.
 
@@ -305,7 +309,7 @@ def step1_extract(image_bytes, content_type):
     prompt = EXTRACT_PROMPT.format(today=today_str, yesterday=yesterday_str, year=year)
 
     payload = {
-        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "model": VISION_MODEL,
         "messages": [{"role": "user", "content": [
             {"type": "image_url", "image_url": {"url": f"data:{content_type};base64,{b64}"}},
             {"type": "text", "text": prompt}
@@ -369,7 +373,7 @@ def step2_categorize(items, user_code=None):
     prompt = CATEGORIZE_PROMPT.format(history_rules=history_rules, items_text=items_text)
 
     payload = {
-        "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+        "model": TEXT_MODEL,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.1, "max_tokens": 1000
     }
