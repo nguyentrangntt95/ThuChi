@@ -274,9 +274,36 @@ const evalAmount = (str) => {
 };
 
 // ── AI Receipt Scanner ──
+// Phone photos are 3-8MB, which blows past Groq's free-tier 8K tokens/minute
+// on a single request. Downscale before upload — receipts stay readable at 1280px.
+function compressImage(file, maxDim = 1280, quality = 0.8) {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith('image/')) return resolve(file);
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      if (scale === 1 && file.size < 400 * 1024) return resolve(file);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(
+        (blob) => resolve(blob && blob.size < file.size ? new File([blob], 'receipt.jpg', { type: 'image/jpeg' }) : file),
+        'image/jpeg',
+        quality
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
 async function scanImage(file) {
   const formData = new FormData();
-  formData.append('image', file);
+  formData.append('image', await compressImage(file));
   const token = getToken();
   const headers = {};
   if (token) headers['Authorization'] = 'Bearer ' + token;
@@ -1405,8 +1432,12 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
     setScanResults(null);
     setScanError(null);
     try {
-      // Scan all images in parallel (3-step pipeline: extract → categorize → duplicate detect)
-      const allResults = await Promise.all(files.map(f => scanImage(f)));
+      // Scan images one at a time — parallel vision calls trip Groq's per-minute
+      // token limit and every image comes back 429
+      const allResults = [];
+      for (const f of files) {
+        allResults.push(await scanImage(f));
+      }
       const errors = allResults.filter(r => r.error).map(r => r.error);
       if (errors.length > 0) setScanError(errors[0]);
       const allItems = allResults.flatMap(r => r.items);

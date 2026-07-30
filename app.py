@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import time
 import queue
 import base64
 import hashlib
@@ -265,16 +266,32 @@ def find_potential_duplicates(user_code, items):
     except:
         return []
 
-def _call_groq(payload):
-    """Helper to call Groq API"""
+def _call_groq(payload, retries=1):
+    """Helper to call Groq API. Retries on 429 using the retry-after header."""
     api_key = os.environ.get("GROQ_API_KEY", "")
     if not api_key:
         raise Exception("GROQ_API_KEY chưa được cấu hình")
     url = "https://api.groq.com/openai/v1/chat/completions"
-    try:
-        resp = http_requests.post(url, json=payload, headers={"Authorization": f"Bearer {api_key}"}, timeout=30)
-    except Exception as e:
-        raise Exception(f"Không kết nối được Groq: {str(e)}")
+    for attempt in range(retries + 1):
+        try:
+            resp = http_requests.post(url, json=payload, headers={"Authorization": f"Bearer {api_key}"}, timeout=60)
+        except Exception as e:
+            raise Exception(f"Không kết nối được Groq: {str(e)}")
+        if resp.status_code != 429:
+            break
+        # Free tier is 8K tokens/minute — wait out the window and retry once or twice
+        if attempt == retries:
+            wait = resp.headers.get("retry-after", "?")
+            raise Exception(
+                f"AI đang quá tải (hết lượt {wait}s). Ảnh quá lớn hoặc scan quá nhiều "
+                "ảnh liên tiếp — đợi ~1 phút rồi thử lại, hoặc scan từng ảnh một."
+            )
+        try:
+            wait = float(resp.headers.get("retry-after", 0))
+        except ValueError:
+            wait = 0
+        # Keep total time well under gunicorn's 120s worker timeout
+        time.sleep(min(max(wait, 3), 20))
     raw = resp.text
     if resp.status_code != 200:
         try:
