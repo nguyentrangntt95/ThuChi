@@ -266,8 +266,16 @@ def find_potential_duplicates(user_code, items):
     except:
         return []
 
+class GroqRateLimit(Exception):
+    """Groq returned 429. Carries retry_after so the client can pace itself."""
+    def __init__(self, retry_after, daily=False):
+        self.retry_after = retry_after
+        self.daily = daily
+        super().__init__("rate limited")
+
+
 def _call_groq(payload, retries=1):
-    """Helper to call Groq API. Retries on 429 using the retry-after header."""
+    """Helper to call Groq API. Retries briefly on 429, then hands off to the client."""
     api_key = os.environ.get("GROQ_API_KEY", "")
     if not api_key:
         raise Exception("GROQ_API_KEY chưa được cấu hình")
@@ -279,19 +287,16 @@ def _call_groq(payload, retries=1):
             raise Exception(f"Không kết nối được Groq: {str(e)}")
         if resp.status_code != 429:
             break
-        # Free tier is 8K tokens/minute — wait out the window and retry once or twice
-        if attempt == retries:
-            wait = resp.headers.get("retry-after", "?")
-            raise Exception(
-                f"AI đang quá tải (hết lượt {wait}s). Ảnh quá lớn hoặc scan quá nhiều "
-                "ảnh liên tiếp — đợi ~1 phút rồi thử lại, hoặc scan từng ảnh một."
-            )
         try:
             wait = float(resp.headers.get("retry-after", 0))
         except ValueError:
             wait = 0
-        # Keep total time well under gunicorn's 120s worker timeout
-        time.sleep(min(max(wait, 3), 20))
+        # Free tier is 8K tokens/minute. Sleep it off once if the window is short,
+        # otherwise let the browser wait instead of holding a gunicorn worker.
+        if attempt == retries or wait > 20:
+            daily = "per day" in resp.text.lower() or "TPD" in resp.text
+            raise GroqRateLimit(int(wait) if wait else 60, daily=daily)
+        time.sleep(max(wait, 3))
     raw = resp.text
     if resp.status_code != 200:
         try:
@@ -312,10 +317,59 @@ def _call_groq(payload, retries=1):
     text = content.strip() if content else ""
     if not text:
         raise Exception("Groq trả về nội dung rỗng")
+    # qwen3.6 is a reasoning model — strip any thinking block that leaks through
+    text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL).strip()
+    text = re.sub(r'^<think>.*', '', text, flags=re.DOTALL).strip()
     if text.startswith("```"):
         text = re.sub(r'^```\w*\n?', '', text)
         text = re.sub(r'\n?```$', '', text)
     return text
+
+
+def _parse_json_array(text):
+    """Pull a JSON array out of a model response, tolerating prose and truncation."""
+    for candidate in (text, ):
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+    start = text.find('[')
+    if start == -1:
+        raise json.JSONDecodeError("no array", text, 0)
+    end = text.rfind(']')
+    if end > start:
+        try:
+            return json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            pass
+    # Output was cut off mid-array (max_tokens): salvage the complete objects
+    objs = []
+    depth = 0
+    obj_start = None
+    for i, ch in enumerate(text[start:], start):
+        if ch == '{':
+            if depth == 0:
+                obj_start = i
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0 and obj_start is not None:
+                try:
+                    objs.append(json.loads(text[obj_start:i + 1]))
+                except json.JSONDecodeError:
+                    pass
+                obj_start = None
+    if objs:
+        return objs
+    raise json.JSONDecodeError("unsalvageable", text, 0)
+
+
+def _parse_amount(raw):
+    """AI may return 45000, '45000', '45.000', '45,000đ' or '1.234.567 VND'."""
+    if isinstance(raw, (int, float)):
+        return int(raw)
+    digits = re.sub(r'[^\d]', '', str(raw or ''))
+    return int(digits) if digits else 0
 
 def step1_extract(image_bytes, content_type):
     """Step 1: Extract all items from image as raw text/data"""
@@ -331,35 +385,37 @@ def step1_extract(image_bytes, content_type):
             {"type": "image_url", "image_url": {"url": f"data:{content_type};base64,{b64}"}},
             {"type": "text", "text": prompt}
         ]}],
-        "temperature": 0.1, "max_tokens": 2000
+        "temperature": 0.1,
+        # Bank statements can hold 20+ rows; 2000 truncated the JSON mid-array
+        "max_tokens": 6000,
+        # Non-thinking mode: reasoning tokens burn the 8K/min budget and corrupt JSON
+        "reasoning_effort": "none",
+        "reasoning_format": "hidden",
     }
 
     text = _call_groq(payload)
     if not text:
         return []
     try:
-        # Try to extract JSON from response
-        json_match = re.search(r'\[.*\]', text, re.DOTALL)
-        if json_match:
-            items = json.loads(json_match.group())
-        else:
-            items = json.loads(text)
+        items = _parse_json_array(text)
     except json.JSONDecodeError:
-        raise Exception(f"Không đọc được JSON từ AI: {text[:100]}")
+        raise Exception(f"AI không trả về dữ liệu đọc được. Thử chụp rõ hơn. (AI nói: {text[:120]})")
     if not isinstance(items, list):
         items = [items]
 
-    # Validate and clean extracted items
+    # Validate and clean extracted items — one bad row must not kill the whole scan
     today_str = vn_today().isoformat()
     result = []
     for item in items:
-        amt = int(item.get('amount', 0))
+        if not isinstance(item, dict):
+            continue
+        amt = _parse_amount(item.get('amount'))
         if amt <= 0:
             continue
-        currency = item.get('currency', 'VND').upper().strip()
-        detail = item.get('detail', '')[:80]
+        currency = str(item.get('currency') or 'VND').upper().strip()
+        detail = str(item.get('detail') or '')[:80]
         entry = {
-            'date': item.get('date', today_str),
+            'date': item.get('date') or today_str,
             'detail': detail,
             'amount': amt,
         }
@@ -537,9 +593,25 @@ def scan_receipt():
     file = request.files['image']
     image_bytes = file.read()
     content_type = file.content_type or 'image/jpeg'
+    # HEIC/HEIF from iPhone isn't readable by the vision model, and browsers that
+    # can't canvas-convert it pass the original through
+    if 'hei' in content_type.lower():
+        return jsonify({
+            "error": "Ảnh định dạng HEIC (iPhone) không đọc được. Vào Cài đặt > Camera > Định dạng > chọn 'Tương thích cao nhất', hoặc chụp lại bằng ảnh chụp màn hình.",
+            "items": [], "duplicates": []
+        }), 400
     try:
         items, duplicates = scan_with_groq(image_bytes, content_type, user_code=get_user_code())
         return jsonify({"items": items, "duplicates": duplicates})
+    except GroqRateLimit as e:
+        if e.daily:
+            msg = "Đã dùng hết lượt AI miễn phí trong ngày (200K token). Đợi sang ngày mai."
+        else:
+            msg = f"AI đang bận, tự thử lại sau {e.retry_after}s..."
+        return jsonify({
+            "error": msg, "rate_limited": True, "daily": e.daily,
+            "retry_after": e.retry_after, "items": [], "duplicates": []
+        }), 429
     except Exception as e:
         return jsonify({"error": str(e), "items": [], "duplicates": []}), 500
 

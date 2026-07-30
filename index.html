@@ -301,16 +301,30 @@ function compressImage(file, maxDim = 1280, quality = 0.8) {
   });
 }
 
-async function scanImage(file) {
-  const formData = new FormData();
-  formData.append('image', await compressImage(file));
+// Waits out Groq's per-minute token limit instead of failing, so scanning several
+// images in one go just takes longer rather than erroring out.
+async function scanImage(file, onWait) {
+  const compressed = await compressImage(file);
   const token = getToken();
   const headers = {};
   if (token) headers['Authorization'] = 'Bearer ' + token;
-  const res = await fetch('/api/scan', { method: 'POST', body: formData, headers });
-  const data = await res.json();
-  if (data.error) console.error('Scan API error:', data.error);
-  return { items: data.items || [], duplicates: data.duplicates || [], error: data.error || null };
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const formData = new FormData();
+    formData.append('image', compressed);
+    const res = await fetch('/api/scan', { method: 'POST', body: formData, headers });
+    const data = await res.json();
+
+    if (res.status === 429 && !data.daily && attempt < 3) {
+      const wait = Math.min(data.retry_after || 20, 60);
+      if (onWait) onWait(wait);
+      await new Promise(r => setTimeout(r, wait * 1000));
+      continue;
+    }
+    if (data.error) console.error('Scan API error:', data.error);
+    return { items: data.items || [], duplicates: data.duplicates || [], error: data.error || null };
+  }
+  return { items: [], duplicates: [], error: 'AI quá tải, thử lại sau ít phút' };
 }
 
 const CATEGORIES = [
@@ -1393,6 +1407,7 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
   const [scanPreview, setScanPreview] = useState(null);
   const [scanResults, setScanResults] = useState(null);
   const [scanError, setScanError] = useState(null);
+  const [scanStatus, setScanStatus] = useState(null);
   const [catSuggestion, setCatSuggestion] = useState(null);
   const [autoApplied, setAutoApplied] = useState(false);
   const fileRef = useRef(null);
@@ -1431,13 +1446,19 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
     setScanning(true);
     setScanResults(null);
     setScanError(null);
+    setScanStatus(null);
     try {
       // Scan images one at a time — parallel vision calls trip Groq's per-minute
-      // token limit and every image comes back 429
+      // token limit and every image comes back 429. scanImage waits out any 429.
       const allResults = [];
-      for (const f of files) {
-        allResults.push(await scanImage(f));
+      for (let i = 0; i < files.length; i++) {
+        const label = files.length > 1 ? `Đang đọc ảnh ${i + 1}/${files.length}` : 'Đang đọc ảnh';
+        setScanStatus(label + '...');
+        allResults.push(await scanImage(files[i], (wait) => {
+          setScanStatus(`${label} — AI đang bận, đợi ${wait}s...`);
+        }));
       }
+      setScanStatus(null);
       const errors = allResults.filter(r => r.error).map(r => r.error);
       if (errors.length > 0) setScanError(errors[0]);
       const allItems = allResults.flatMap(r => r.items);
@@ -1465,6 +1486,7 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
       console.error('Scan error:', err);
       setScanError('Lỗi: ' + (err.message || 'Không thể đọc ảnh'));
     }
+    setScanStatus(null);
     setScanning(false);
     if (fileRef.current) fileRef.current.value = '';
   };
@@ -1530,7 +1552,7 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
             ${scanning ? html`
               <div class="w-full py-4 rounded-xl border-2 border-dashed border-emerald-300 dark:border-emerald-600 flex items-center justify-center gap-3 text-base text-emerald-600 dark:text-emerald-400">
                 <svg class="animate-spin" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-dasharray="31.4 31.4" stroke-linecap="round"/></svg>
-                Đang đọc hóa đơn...
+                ${scanStatus || 'Đang đọc hóa đơn...'}
               </div>
             ` : html`
               <div class="flex gap-2">
