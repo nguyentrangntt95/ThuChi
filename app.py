@@ -1,4 +1,5 @@
 import os
+import io
 import re
 import json
 import time
@@ -12,7 +13,20 @@ from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, send_file, Response
 from datetime import date, timedelta, datetime, timezone
 from functools import wraps
+
+try:
+    from PIL import Image, ImageOps
+    try:
+        import pillow_heif  # iPhone HEIC/HEIF
+        pillow_heif.register_heif_opener()
+    except ImportError:
+        pass
+except ImportError:
+    Image = None
+
 app = Flask(__name__)
+# Reject absurd uploads before reading them into memory
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
 VN_TZ = timezone(timedelta(hours=7))
 def vn_today():
     return datetime.now(VN_TZ).date()
@@ -266,6 +280,40 @@ def find_potential_duplicates(user_code, items):
     except:
         return []
 
+# Base64 inflates by ~33%, and the whole request has to stay comfortably inside
+# Groq's payload limit — anything over this came back as 413.
+MAX_IMAGE_BYTES = 1_200_000
+
+
+def _prepare_image(image_bytes, content_type):
+    """Normalize any upload to a modest JPEG. Never trust the browser to have done it.
+
+    Returns (bytes, content_type). Handles HEIC, EXIF rotation, and oversized photos.
+    """
+    if Image is None:
+        return image_bytes, content_type
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        # Phone photos carry rotation in EXIF; without this the model reads them sideways
+        img = ImageOps.exif_transpose(img)
+        if img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        for max_dim, quality in ((1280, 80), (1024, 75), (800, 70), (640, 60)):
+            resized = img
+            if max(img.size) > max_dim:
+                resized = img.copy()
+                resized.thumbnail((max_dim, max_dim), Image.LANCZOS)
+            buf = io.BytesIO()
+            resized.save(buf, format="JPEG", quality=quality, optimize=True)
+            data = buf.getvalue()
+            if len(data) <= MAX_IMAGE_BYTES:
+                return data, "image/jpeg"
+        return data, "image/jpeg"  # smallest attempt; better to try than to fail
+    except Exception:
+        # Unreadable by Pillow — let Groq have a go at the original
+        return image_bytes, content_type
+
+
 class GroqRateLimit(Exception):
     """Groq returned 429. Carries retry_after so the client can pace itself."""
     def __init__(self, retry_after, daily=False):
@@ -373,6 +421,7 @@ def _parse_amount(raw):
 
 def step1_extract(image_bytes, content_type):
     """Step 1: Extract all items from image as raw text/data"""
+    image_bytes, content_type = _prepare_image(image_bytes, content_type)
     b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
     today_str = vn_today().isoformat()
     yesterday_str = (vn_today() - timedelta(days=1)).isoformat()
@@ -493,9 +542,20 @@ def scan_with_groq(image_bytes, content_type, user_code=None):
 
 # ── Public routes (no auth) ──
 
+@app.errorhandler(413)
+def too_large(e):
+    return jsonify({
+        "error": "Ảnh quá lớn (>25MB). Chụp lại hoặc dùng ảnh chụp màn hình.",
+        "items": [], "duplicates": []
+    }), 413
+
+
 @app.route("/")
 def index():
-    return send_file("index.html")
+    # The whole app lives in this file; a cached copy leaves users on stale JS
+    resp = send_file("index.html")
+    resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+    return resp
 
 @app.route("/api/signup", methods=["POST"])
 def signup():
@@ -593,13 +653,8 @@ def scan_receipt():
     file = request.files['image']
     image_bytes = file.read()
     content_type = file.content_type or 'image/jpeg'
-    # HEIC/HEIF from iPhone isn't readable by the vision model, and browsers that
-    # can't canvas-convert it pass the original through
-    if 'hei' in content_type.lower():
-        return jsonify({
-            "error": "Ảnh định dạng HEIC (iPhone) không đọc được. Vào Cài đặt > Camera > Định dạng > chọn 'Tương thích cao nhất', hoặc chụp lại bằng ảnh chụp màn hình.",
-            "items": [], "duplicates": []
-        }), 400
+    if not image_bytes:
+        return jsonify({"error": "Ảnh rỗng", "items": [], "duplicates": []}), 400
     try:
         items, duplicates = scan_with_groq(image_bytes, content_type, user_code=get_user_code())
         return jsonify({"items": items, "duplicates": duplicates})
