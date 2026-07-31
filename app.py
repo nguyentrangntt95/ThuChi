@@ -280,12 +280,15 @@ def find_potential_duplicates(user_code, items):
     except:
         return []
 
-# Base64 inflates by ~33%, and the whole request has to stay comfortably inside
-# Groq's payload limit — anything over this came back as 413.
-MAX_IMAGE_BYTES = 1_200_000
+MAX_IMAGE_BYTES = 700_000
+
+# Groq counts prompt + image + max_tokens against the 8K/min budget and rejects a
+# single oversized request with 413. Each step here must total well under 8000:
+# image tokens grow with resolution, so resolution and max_tokens drop together.
+EXTRACT_ATTEMPTS = ((1024, 2000), (768, 1600), (640, 1200))
 
 
-def _prepare_image(image_bytes, content_type):
+def _prepare_image(image_bytes, content_type, max_dim=1024):
     """Normalize any upload to a modest JPEG. Never trust the browser to have done it.
 
     Returns (bytes, content_type). Handles HEIC, EXIF rotation, and oversized photos.
@@ -298,13 +301,12 @@ def _prepare_image(image_bytes, content_type):
         img = ImageOps.exif_transpose(img)
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
-        for max_dim, quality in ((1280, 80), (1024, 75), (800, 70), (640, 60)):
-            resized = img
-            if max(img.size) > max_dim:
-                resized = img.copy()
-                resized.thumbnail((max_dim, max_dim), Image.LANCZOS)
+        if max(img.size) > max_dim:
+            img = img.copy()
+            img.thumbnail((max_dim, max_dim), Image.LANCZOS)
+        for quality in (80, 70, 60):
             buf = io.BytesIO()
-            resized.save(buf, format="JPEG", quality=quality, optimize=True)
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
             data = buf.getvalue()
             if len(data) <= MAX_IMAGE_BYTES:
                 return data, "image/jpeg"
@@ -320,6 +322,13 @@ class GroqRateLimit(Exception):
         self.retry_after = retry_after
         self.daily = daily
         super().__init__("rate limited")
+
+
+class GroqRequestTooLarge(Exception):
+    """Groq returned 413: this single request exceeds the per-minute token budget."""
+    def __init__(self, detail=""):
+        self.detail = detail
+        super().__init__(detail or "request too large")
 
 
 def _call_groq(payload, retries=1):
@@ -352,6 +361,8 @@ def _call_groq(payload, retries=1):
             msg = err.get("error", {}).get("message", raw[:200])
         except:
             msg = raw[:200] if raw else f"HTTP {resp.status_code}"
+        if resp.status_code == 413:
+            raise GroqRequestTooLarge(msg)
         raise Exception(f"Groq API lỗi ({resp.status_code}): {msg}")
     if not raw or not raw.strip():
         raise Exception("Groq API trả về response rỗng")
@@ -421,28 +432,42 @@ def _parse_amount(raw):
 
 def step1_extract(image_bytes, content_type):
     """Step 1: Extract all items from image as raw text/data"""
-    image_bytes, content_type = _prepare_image(image_bytes, content_type)
-    b64 = base64.standard_b64encode(image_bytes).decode("utf-8")
     today_str = vn_today().isoformat()
     yesterday_str = (vn_today() - timedelta(days=1)).isoformat()
     year = vn_today().year
     prompt = EXTRACT_PROMPT.format(today=today_str, yesterday=yesterday_str, year=year)
 
-    payload = {
-        "model": VISION_MODEL,
-        "messages": [{"role": "user", "content": [
-            {"type": "image_url", "image_url": {"url": f"data:{content_type};base64,{b64}"}},
-            {"type": "text", "text": prompt}
-        ]}],
-        "temperature": 0.1,
-        # Bank statements can hold 20+ rows; 2000 truncated the JSON mid-array
-        "max_tokens": 6000,
-        # Non-thinking mode: reasoning tokens burn the 8K/min budget and corrupt JSON
-        "reasoning_effort": "none",
-        "reasoning_format": "hidden",
-    }
-
-    text = _call_groq(payload)
+    # If the request still overshoots the token budget, shrink and try again
+    last_error = None
+    text = None
+    for max_dim, max_out in EXTRACT_ATTEMPTS:
+        data, ctype = _prepare_image(image_bytes, content_type, max_dim=max_dim)
+        b64 = base64.standard_b64encode(data).decode("utf-8")
+        payload = {
+            "model": VISION_MODEL,
+            "messages": [{"role": "user", "content": [
+                {"type": "image_url", "image_url": {"url": f"data:{ctype};base64,{b64}"}},
+                {"type": "text", "text": prompt}
+            ]}],
+            "temperature": 0.1,
+            # Counts toward the 8K/min budget, so it cannot be generous.
+            # _parse_json_array salvages rows if a long statement gets truncated.
+            "max_tokens": max_out,
+            # Non-thinking mode: reasoning tokens burn the budget and corrupt JSON
+            "reasoning_effort": "none",
+            "reasoning_format": "hidden",
+        }
+        try:
+            text = _call_groq(payload)
+            break
+        except GroqRequestTooLarge as e:
+            last_error = e
+            continue
+    if text is None:
+        raise Exception(
+            "Ảnh này vượt hạn mức token mỗi phút của Groq free tier kể cả sau khi "
+            f"đã thu nhỏ. Thử chụp riêng từng phần. (Groq: {getattr(last_error, 'detail', '')[:150]})"
+        )
     if not text:
         return []
     try:
