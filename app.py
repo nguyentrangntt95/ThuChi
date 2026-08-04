@@ -153,40 +153,30 @@ VISION_MODEL = "qwen/qwen3.6-27b"
 TEXT_MODEL = "openai/gpt-oss-120b"
 
 # Step 1: Pure extraction - OCR text from image
-EXTRACT_PROMPT = """Bạn là trợ lý đọc ảnh hóa đơn/chi tiêu. Hãy xem ảnh và trích xuất TẤT CẢ các khoản chi tiêu dưới dạng text.
+# Kept deliberately short: every token here is charged against the 8K/min budget
+# on each scan, which directly caps how many images can be read per minute.
+EXTRACT_PROMPT = """Đọc ảnh hóa đơn/sao kê, trích xuất các khoản CHI thành JSON.
 
-HÔM NAY là ngày {today} (năm {year}).
+HÔM NAY={today}, HÔM QUA={yesterday}, năm {year}.
 
-Nếu ảnh là 1 hóa đơn/bill duy nhất → trả về 1 khoản.
-Nếu ảnh là sao kê ngân hàng, lịch sử giao dịch, hoặc có nhiều khoản riêng biệt → trả về NHIỀU khoản, mỗi giao dịch 1 khoản.
+CHỈ LẤY TIỀN RA, BỎ QUA TIỀN VÀO:
+- BỎ nếu: có dấu +, số màu xanh, hoặc ghi "nhận tiền", "chuyển đến", "hoàn tiền", "tiền thưởng", "lương".
+- LẤY nếu: có dấu -, số màu đen/đỏ, hoặc ghi "thanh toán", "chuyển tiền", "mua", "chi".
 
-QUAN TRỌNG - PHÂN BIỆT TIỀN VÀO VÀ TIỀN RA:
-- Chỉ lấy các khoản CHI (tiền ra/tiền trừ). BỎ QUA hoàn toàn các khoản THU (tiền vào/tiền cộng).
-- Trong app ngân hàng: số tiền màu XANH LÁ/xanh dương thường là TIỀN VÀO (nhận tiền, hoàn tiền) → BỎ QUA.
-- Số tiền màu ĐEN/ĐỎ hoặc có dấu trừ (-) thường là TIỀN RA (chi tiêu) → LẤY.
-- Nếu có ký hiệu +/cộng trước số tiền → TIỀN VÀO → BỎ QUA.
-- Nếu có ký hiệu -/trừ trước số tiền → TIỀN RA → LẤY.
-- Nếu ghi "nhận tiền", "chuyển đến", "hoàn tiền", "tiền thưởng", "lương" → BỎ QUA.
-- Nếu ghi "thanh toán", "chuyển tiền", "mua", "chi" → LẤY.
+NGÀY (bắt buộc): "hôm nay"/"today"/"hn"→{today}. "hôm qua"/"yesterday"/"hq"→{yesterday}. Ngày cụ thể (VD 9/4)→dùng ngày đó, năm {year}. Không có ngày→{today}. Không được nhầm hôm nay với hôm qua.
 
-QUAN TRỌNG VỀ NGÀY (BẮT BUỘC tuân theo):
-- HÔM NAY = {today}, HÔM QUA = {yesterday}
-- Nếu ảnh ghi "hôm nay", "today", "hn" → date PHẢI LÀ "{today}"
-- Nếu ảnh ghi "hôm qua", "yesterday", "hq" → date PHẢI LÀ "{yesterday}"
-- Nếu ảnh ghi ngày cụ thể (VD: 9/4, 09/04) → dùng ngày đó, năm {year}
-- Nếu không có ngày nào → dùng "{today}"
-- KHÔNG ĐƯỢC nhầm hôm nay với hôm qua. Kiểm tra lại trước khi trả về.
+1 hóa đơn → 1 khoản; nếu có dòng TỔNG CỘNG thì lấy tổng, không tách từng món.
+Sao kê/lịch sử giao dịch → mỗi giao dịch 1 khoản.
 
-Với mỗi khoản, trích xuất:
-- "date": ngày giao dịch (format YYYY-MM-DD)
-- "detail": tên khoản chi/mô tả GỐC từ ảnh, giữ nguyên tên cửa hàng/dịch vụ (VD: "Grab đi làm", "Cà phê Highland", "Tiền điện tháng 3")
-- "amount": số tiền GỐC trên hóa đơn (số nguyên, KHÔNG có dấu chấm/phẩy)
-- "currency": đơn vị tiền tệ gốc. Nếu là VND/đồng thì ghi "VND". Nếu là USD/$ thì ghi "USD". Mặc định "VND".
+Mỗi khoản gồm:
+- "date": YYYY-MM-DD
+- "detail": tên gốc trên ảnh, giữ nguyên tên cửa hàng (VD "Grab đi làm", "Tiền điện tháng 3")
+- "amount": số nguyên, KHÔNG dấu chấm/phẩy
+- "currency": "VND" mặc định, "USD" nếu là $
 
-KHÔNG cần phân loại category ở bước này. CHỈ trả về JSON array:
+Chỉ trả JSON array, không giải thích:
 [{{"date":"2026-03-29","detail":"Cà phê Highland","amount":45000,"currency":"VND"}}]
-
-Nếu không đọc được gì hữu ích, trả về: []"""
+Không đọc được gì → []"""
 
 # Step 2: Categorize extracted items using AI + user history
 CATEGORIZE_PROMPT = """Bạn là trợ lý phân loại chi tiêu. Hãy phân loại từng khoản chi tiêu dưới đây vào đúng category.
@@ -282,10 +272,62 @@ def find_potential_duplicates(user_code, items):
 
 MAX_IMAGE_BYTES = 700_000
 
-# Groq counts prompt + image + max_tokens against the 8K/min budget and rejects a
-# single oversized request with 413. Each step here must total well under 8000:
-# image tokens grow with resolution, so resolution and max_tokens drop together.
-EXTRACT_ATTEMPTS = ((1024, 2000), (768, 1600), (640, 1200))
+# Groq counts prompt + image + max_tokens against the 8K/min budget, so a generous
+# max_tokens directly costs throughput: at ~4000 tokens a scan only 2 fit per minute.
+# A single receipt replies in well under 700 tokens; long statements are handled by
+# retrying at EXTRACT_RETRY_LARGE only when the reply actually comes back truncated.
+EXTRACT_ATTEMPTS = ((1024, 700), (768, 700), (640, 700))
+EXTRACT_RETRY_LARGE = 2500
+
+
+def _looks_truncated(text):
+    t = (text or "").rstrip()
+    return bool(t) and not t.endswith("]") and not t.endswith("}")
+
+
+# Mirrors the rules in CATEGORIZE_PROMPT. Order matters: GrabFood must win over Grab.
+KEYWORD_CATEGORIES = (
+    ('food', ('grabfood', 'grabmart', 'shopeefood', 'baemin', 'gojek food', 'moca',
+              'starbucks', 'highland', 'phúc long', 'phuc long', 'the coffee house',
+              'cộng cà phê', 'kfc', 'mcdonald', 'jollibee', 'pizza', 'lotteria',
+              'burger', 'texas chicken', 'popeyes', 'cà phê', 'ca phe', 'cafe',
+              'coffee', 'trà sữa', 'tra sua', 'nhà hàng', 'quán ăn', 'cơm ', 'phở',
+              'bún ', 'bánh mì', 'circle k', 'bakery', 'kichi', 'gogi', 'lotte mart',
+              'vinmart', 'winmart', 'bách hóa xanh')),
+    ('transport', ('grabbike', 'grabcar', 'grab', 'xanh sm', 'be group', 'taxi',
+                   'mai linh', 'vinasun', 'xe ôm', 'vé xe', 'vé tàu', 'vé máy bay',
+                   'vietjet', 'bamboo airways', 'vietnam airlines', 'xăng', 'petrolimex',
+                   'gửi xe', 'giữ xe', 'vetc', 'epass')),
+    ('shopping', ('shopee', 'lazada', 'tiki', 'sendo', 'tiktok shop', 'uniqlo',
+                  'zara', 'h&m', 'nike', 'adidas', 'điện máy', 'thế giới di động',
+                  'fpt shop')),
+    ('entertainment', ('netflix', 'spotify', 'youtube premium', 'cgv', 'lotte cinema',
+                       'bhd star', 'galaxy cinema', 'steam', 'playstation', 'game',
+                       'rạp phim', 'karaoke')),
+    ('bills', ('tiền điện', 'tien dien', 'evn', 'tiền nước', 'tien nuoc', 'internet',
+               'fpt telecom', 'viettel', 'vinaphone', 'mobifone', 'thuê nhà',
+               'thue nha', 'tiền nhà', 'phí quản lý', 'cước')),
+    ('health', ('bệnh viện', 'benh vien', 'phòng khám', 'nhà thuốc', 'pharmacity',
+                'long châu', 'guardian', 'nha khoa', 'thuốc', 'vaccine', 'xét nghiệm')),
+    ('education', ('học phí', 'hoc phi', 'udemy', 'coursera', 'khóa học', 'khoa hoc',
+                   'nhà sách', 'fahasa', 'sách', 'trung tâm anh ngữ', 'ielts')),
+    ('beauty', ('spa', 'skincare', 'mỹ phẩm', 'my pham', 'làm tóc', 'lam toc', 'salon',
+                'nail', 'thẩm mỹ', 'cocoon', 'the face shop', 'innisfree')),
+    ('savings', ('tiết kiệm', 'tiet kiem', 'đầu tư', 'dau tu', 'tích lũy', 'để dành',
+                 'chứng khoán', 'vàng sjc')),
+)
+
+
+def _local_category(detail):
+    """Category from merchant name alone, or None if the AI should decide."""
+    d = (detail or '').lower()
+    if not d:
+        return None
+    for cat, keywords in KEYWORD_CATEGORIES:
+        for kw in keywords:
+            if kw in d:
+                return cat
+    return None
 
 
 def _prepare_image(image_bytes, content_type, max_dim=1024):
@@ -437,32 +479,39 @@ def step1_extract(image_bytes, content_type):
     year = vn_today().year
     prompt = EXTRACT_PROMPT.format(today=today_str, yesterday=yesterday_str, year=year)
 
-    # If the request still overshoots the token budget, shrink and try again
-    last_error = None
-    text = None
-    for max_dim, max_out in EXTRACT_ATTEMPTS:
+    def ask(max_dim, max_out):
         data, ctype = _prepare_image(image_bytes, content_type, max_dim=max_dim)
         b64 = base64.standard_b64encode(data).decode("utf-8")
-        payload = {
+        return _call_groq({
             "model": VISION_MODEL,
             "messages": [{"role": "user", "content": [
                 {"type": "image_url", "image_url": {"url": f"data:{ctype};base64,{b64}"}},
                 {"type": "text", "text": prompt}
             ]}],
             "temperature": 0.1,
-            # Counts toward the 8K/min budget, so it cannot be generous.
-            # _parse_json_array salvages rows if a long statement gets truncated.
             "max_tokens": max_out,
             # Non-thinking mode: reasoning tokens burn the budget and corrupt JSON
             "reasoning_effort": "none",
             "reasoning_format": "hidden",
-        }
+        })
+
+    # If the request still overshoots the token budget, shrink and try again
+    last_error = None
+    text = None
+    for max_dim, max_out in EXTRACT_ATTEMPTS:
         try:
-            text = _call_groq(payload)
-            break
+            text = ask(max_dim, max_out)
         except GroqRequestTooLarge as e:
             last_error = e
             continue
+        # Long statement cut off mid-array: pay for a bigger budget just this once.
+        # If that retry is refused, keep the salvageable rows we already have.
+        if _looks_truncated(text):
+            try:
+                text = ask(max_dim, EXTRACT_RETRY_LARGE) or text
+            except (GroqRequestTooLarge, GroqRateLimit):
+                pass
+        break
     if text is None:
         raise Exception(
             "Ảnh này vượt hạn mức token mỗi phút của Groq free tier kể cả sau khi "
@@ -514,15 +563,27 @@ def step2_categorize(items, user_code=None):
             lines = [f'  "{d}" → {c}' for d, c in list(patterns.items())[:30]]
             history_rules = "QUY TẮC TỪ LỊCH SỬ NGƯỜI DÙNG (ƯU TIÊN CAO NHẤT):\n" + "\n".join(lines)
 
-    # Build items text
-    items_text = "\n".join([f'{i}. "{it["detail"]}" - {it["amount"]}đ ({it["date"]})' for i, it in enumerate(items)])
+    # Most merchants are recognisable from the name alone. Settling those locally
+    # skips a whole round trip, which is most of the per-scan latency.
+    unresolved = []
+    for i, item in enumerate(items):
+        cat = _local_category(item.get('detail', ''))
+        if cat:
+            item['category'] = cat
+        else:
+            unresolved.append(i)
+    if not unresolved:
+        return items
+
+    # Build items text — only for the ones keywords could not settle
+    items_text = "\n".join([f'{i}. "{items[i]["detail"]}" - {items[i]["amount"]}đ ({items[i]["date"]})' for i in unresolved])
 
     prompt = CATEGORIZE_PROMPT.format(history_rules=history_rules, items_text=items_text)
 
     payload = {
         "model": TEXT_MODEL,
         "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0.1, "max_tokens": 1000
+        "temperature": 0.1, "max_tokens": 400
     }
 
     try:
@@ -541,12 +602,12 @@ def step2_categorize(items, user_code=None):
                 cat = 'other'
             cat_map[idx] = cat
 
-        for i, item in enumerate(items):
-            item['category'] = cat_map.get(i, 'other')
+        for i in unresolved:
+            items[i]['category'] = cat_map.get(i, 'other')
     except:
-        # Fallback: set all to 'other' if categorization fails
-        for item in items:
-            item['category'] = 'other'
+        # Fallback: only the ones keywords could not settle
+        for i in unresolved:
+            items[i]['category'] = 'other'
 
     return items
 
