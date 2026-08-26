@@ -1109,21 +1109,31 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
         if (cur !== prev) catDiffs.push({ cat: c, diff: cur - prev });
       });
       catDiffs.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+      // "Mua sắm -15.3M" không cho biết đó là số của kỳ nào, nên ghi thẳng
+      // từ bao nhiêu còn bao nhiêu. Mỗi nhóm tự tô màu vì một nhóm có thể
+      // tăng ngược chiều với tổng.
       const topChanges = catDiffs.slice(0, 2).map(cd => {
         const cat = catMap[cd.cat] || catMap.other;
-        return cat.emoji + ' ' + cat.name + ' ' + (cd.diff > 0 ? '+' : '') + fmtShort(cd.diff);
+        const name = CAT_NAMES[cd.cat] || cat.name;
+        const cur = curCatTotals[cd.cat] || 0;
+        const prev = prevCatTotals[cd.cat] || 0;
+        return {
+          text: cat.emoji + ' ' + name + ': ' + fmtShort(prev) + ' → ' + fmtShort(cur)
+            + ' (' + (cd.diff > 0 ? '+' : '-') + fmtShort(Math.abs(cd.diff)) + ')',
+          color: cd.diff > 0 ? '#ef4444' : '#10b981',
+        };
       });
 
       if (diff > 0) {
-        result.push({ icon: '\u{1F4C8}', title: 'Tăng ' + diffPct + '% so kỳ trước', subtitle: '+' + fmtShort(diff), details: topChanges, color: '#ef4444' });
+        result.push({ icon: '\u{1F4C8}', title: 'Tăng ' + diffPct + '% so kỳ trước', subtitle: fmtShort(prevTotal) + ' → ' + fmtShort(total), details: topChanges, color: '#ef4444' });
       } else if (diff < 0) {
-        result.push({ icon: '\u{1F4C9}', title: 'Giảm ' + diffPct + '% so kỳ trước', subtitle: '-' + fmtShort(Math.abs(diff)), details: topChanges, color: '#10b981' });
+        result.push({ icon: '\u{1F4C9}', title: 'Giảm ' + diffPct + '% so kỳ trước', subtitle: fmtShort(prevTotal) + ' → ' + fmtShort(total), details: topChanges, color: '#10b981' });
       }
     }
 
     // 2. Most expensive day
     const byDate = {};
-    rangeExpenses.forEach(e => { byDate[e.date] = (byDate[e.date] || 0) + e.amount; });
+    spendingExpenses.forEach(e => { byDate[e.date] = (byDate[e.date] || 0) + e.amount; });
     const dates = Object.entries(byDate).sort((a,b) => b[1] - a[1]);
     if (dates.length > 1) {
       const [maxDate, maxAmt] = dates[0];
@@ -1145,27 +1155,83 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
       g.count += 1;
       g.cats[e.category] = (g.cats[e.category] || 0) + e.amount;
     });
+
+    // Tên ngắn nuốt tên dài: có sẵn khoản "gội đầu" thì "gội đầu cut tóc",
+    // "gội đầu + sấy" gom hết vào đó. Chỉ gộp khi thật sự tồn tại một khoản
+    // ghi đúng tên ngắn — "cơm tấm"/"cơm gà" vẫn tách nếu không có khoản "cơm".
+    // Chặn tên dưới 4 ký tự và bắt khớp trọn từ, kẻo "xe" nuốt cả "sửa xe".
+    const isWordCh = ch => (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9');
+    const hasWhole = (hay, needle) => {
+      for (let i = hay.indexOf(needle); i !== -1; i = hay.indexOf(needle, i + 1)) {
+        const okBefore = i === 0 || !isWordCh(hay[i - 1]);
+        const okAfter = i + needle.length >= hay.length || !isWordCh(hay[i + needle.length]);
+        if (okBefore && okAfter) return true;
+      }
+      return false;
+    };
+    const plainKeys = Object.keys(byName).filter(k => k[0] !== '@').sort((a, b) => a.length - b.length);
+    plainKeys.forEach((longK, i) => {
+      for (let j = 0; j < i; j++) {
+        const shortK = plainKeys[j];
+        if (shortK.length < 4 || !byName[shortK] || !byName[longK]) continue;
+        if (!hasWhole(longK, shortK)) continue;
+        const src = byName[longK], dst = byName[shortK];
+        dst.total += src.total;
+        dst.count += src.count;
+        Object.entries(src.cats).forEach(([c, v]) => { dst.cats[c] = (dst.cats[c] || 0) + v; });
+        delete byName[longK];
+        break;
+      }
+    });
+
     const namedGroups = Object.values(byName).sort((a, b) => b.total - a.total);
     if (namedGroups.length > 0) {
       const lines = namedGroups.slice(0, 5).map(g => {
         const topCat = Object.entries(g.cats).sort((a, b) => b[1] - a[1])[0][0];
         const cat = catMap[topCat] || catMap.other;
         const pct = total > 0 ? Math.round(g.total / total * 100) : 0;
-        return cat.emoji + ' ' + g.label + (g.count > 1 ? ' ×' + g.count : '')
+        const label = g.label.charAt(0).toUpperCase() + g.label.slice(1);
+        return cat.emoji + ' ' + label + (g.count > 1 ? ' ×' + g.count : '')
           + ' — ' + fmtShort(g.total) + (pct >= 1 ? ' (' + pct + '%)' : '');
       });
       result.push({ icon: '\u{1F3F7}\u{FE0F}', title: 'Khoản chi nhiều nhất', subtitle: fmtShort(namedGroups[0].total), details: lines, color: '#8b5cf6' });
     }
 
-    // 3. Stats
+    // 3. Thống kê — kèm so sánh với kỳ trước dài bằng đúng khung đang lọc.
+    // Đếm theo spendingExpenses chứ không phải rangeExpenses: tiền bỏ ống
+    // không phải khoản chi, tính vào thì trung bình mỗi ngày lệch hẳn.
     const activeDays = Object.keys(byDate).length;
     const avgPerActiveDay = activeDays > 0 ? Math.round(total / activeDays) : 0;
-    const txCount = rangeExpenses.length;
+    const txCount = spendingExpenses.length;
     const avgPerTx = txCount > 0 ? Math.round(total / txCount) : 0;
+
+    const prevByDate = {};
+    prevExpenses.forEach(e => { prevByDate[e.date] = (prevByDate[e.date] || 0) + e.amount; });
+    const prevActiveDays = Object.keys(prevByDate).length;
+    const prevAvgPerDay = prevActiveDays > 0 ? Math.round(prevTotal / prevActiveDays) : 0;
+    const prevTxCount = prevExpenses.length;
+    const prevAvgPerTx = prevTxCount > 0 ? Math.round(prevTotal / prevTxCount) : 0;
+
+    const cmp = (label, prev, cur) => {
+      if (!prev) return { text: label + ' ' + fmtShort(cur) };
+      const pct = Math.round((cur - prev) / prev * 100);
+      return {
+        text: label + ' ' + fmtShort(prev) + ' → ' + fmtShort(cur)
+          + ' (' + (pct > 0 ? '+' : '') + pct + '%)',
+        color: pct > 0 ? '#ef4444' : pct < 0 ? '#10b981' : null,
+      };
+    };
+
     if (activeDays > 1 || txCount > 0) {
       const lines = [];
-      if (activeDays > 1) lines.push(activeDays + ' ngày · TB ' + fmtShort(avgPerActiveDay) + '/ngày');
-      if (txCount > 0) lines.push(txCount + ' giao dịch · TB ' + fmtShort(avgPerTx) + '/lần');
+      if (activeDays > 1) {
+        const c = cmp('TB/ngày', prevAvgPerDay, avgPerActiveDay);
+        lines.push({ text: activeDays + ' ngày' + (prevActiveDays ? ' (kỳ trước ' + prevActiveDays + ')' : '') + ' · ' + c.text, color: c.color });
+      }
+      if (txCount > 0) {
+        const c = cmp('TB/lần', prevAvgPerTx, avgPerTx);
+        lines.push({ text: txCount + ' giao dịch' + (prevTxCount ? ' (kỳ trước ' + prevTxCount + ')' : '') + ' · ' + c.text, color: c.color });
+      }
       result.push({ icon: '\u{1F4CA}', title: 'Thống kê', details: lines, color: '#6366f1' });
     }
 
@@ -1187,7 +1253,7 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
             ${ins.details && ins.details.length > 0 && html`
               <div style="margin-left:34px;margin-top:4px">
                 ${ins.details.map((d, j) => html`
-                  <p key=${j} class="text-zinc-500 dark:text-zinc-400" style="font-size:12px;line-height:1.6">${d}</p>
+                  <p key=${j} class=${d.color ? '' : 'text-zinc-500 dark:text-zinc-400'} style=${'font-size:12px;line-height:1.6' + (d.color ? ';color:' + d.color : '')}>${d.text || d}</p>
                 `)}
               </div>
             `}
