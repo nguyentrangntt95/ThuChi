@@ -1066,6 +1066,30 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
       result.push({ icon: '\u{1F525}', title: 'Ngày chi nhiều nhất', subtitle: d.getDate() + '/' + (d.getMonth()+1) + ' (' + dayNames[d.getDay()] + ') — ' + fmtShort(maxAmt), color: '#f97316' });
     }
 
+    // 2b. Biggest single things you spent on (identical names grouped into one)
+    const byName = {};
+    spendingExpenses.forEach(e => {
+      const raw = (e.detail || '').trim();
+      if (!raw) return;
+      const key = raw.toLowerCase().replace(/\s+/g, ' ');
+      if (!byName[key]) byName[key] = { label: raw, total: 0, count: 0, cats: {} };
+      const g = byName[key];
+      g.total += e.amount;
+      g.count += 1;
+      g.cats[e.category] = (g.cats[e.category] || 0) + e.amount;
+    });
+    const namedGroups = Object.values(byName).sort((a, b) => b.total - a.total);
+    if (namedGroups.length > 0) {
+      const lines = namedGroups.slice(0, 5).map(g => {
+        const topCat = Object.entries(g.cats).sort((a, b) => b[1] - a[1])[0][0];
+        const cat = catMap[topCat] || catMap.other;
+        const pct = total > 0 ? Math.round(g.total / total * 100) : 0;
+        return cat.emoji + ' ' + g.label + (g.count > 1 ? ' ×' + g.count : '')
+          + ' — ' + fmtShort(g.total) + (pct >= 1 ? ' (' + pct + '%)' : '');
+      });
+      result.push({ icon: '\u{1F3F7}\u{FE0F}', title: 'Khoản chi nhiều nhất', subtitle: fmtShort(namedGroups[0].total), details: lines, color: '#8b5cf6' });
+    }
+
     // 3. Stats
     const activeDays = Object.keys(byDate).length;
     const avgPerActiveDay = activeDays > 0 ? Math.round(total / activeDays) : 0;
