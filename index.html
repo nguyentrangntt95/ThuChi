@@ -342,6 +342,72 @@ const CATEGORIES = [
 const catMap = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 const SAVINGS_CAT = 'savings';
 
+// Cùng một chỗ nhưng mỗi lần ghi một kiểu ("shopee quần", "mỹ phẩm shopee"),
+// nên phần Insights nhận diện theo từ khoá thương hiệu rồi gom về một mối.
+// Từ khoá viết thường, không dấu — merchantKey() bỏ dấu trước khi so.
+const MERCHANT_ALIASES = [
+  ['Shopee', ['shopee']],
+  ['Lazada', ['lazada']],
+  ['TikTok Shop', ['tiktok']],
+  ['Tiki', ['tiki']],
+  ['Sendo', ['sendo']],
+  ['Amazon', ['amazon']],
+  ['Grab', ['grab']],
+  ['Xanh SM', ['xanh sm', 'xanhsm']],
+  ['Gojek', ['gojek']],
+  ['Baemin', ['baemin']],
+  ['Bee', ['be bike', 'be car', 'be food']],
+  ['Highlands', ['highlands', 'highland']],
+  ['The Coffee House', ['the coffee house', 'coffee house']],
+  ['Starbucks', ['starbucks']],
+  ['Phúc Long', ['phuc long']],
+  ['Katinat', ['katinat']],
+  ['Trung Nguyên', ['trung nguyen']],
+  ['Circle K', ['circle k', 'circlek']],
+  ['GS25', ['gs25']],
+  ['Bách Hoá Xanh', ['bach hoa xanh', 'bhx']],
+  ['WinMart', ['winmart', 'vinmart']],
+  ['Co.opmart', ['coopmart', 'co.op mart', 'co op mart', 'coop mart']],
+  ['Aeon', ['aeon']],
+  ['Lotte', ['lotte']],
+  ['MM Mega Market', ['mega market']],
+  ['Emart', ['emart']],
+  ['Pharmacity', ['pharmacity']],
+  ['Long Châu', ['long chau']],
+  ['Guardian', ['guardian']],
+  ['Watsons', ['watsons']],
+  ['Netflix', ['netflix']],
+  ['Spotify', ['spotify']],
+  ['YouTube', ['youtube']],
+  ['CGV', ['cgv']],
+  ['Galaxy Cinema', ['galaxy cinema']],
+  ['Uniqlo', ['uniqlo']],
+  ['Zara', ['zara']],
+  ['H&M', ['h&m', 'h & m']],
+  ['Nike', ['nike']],
+  ['Adidas', ['adidas']],
+  ['Thế Giới Di Động', ['the gioi di dong', 'tgdd']],
+  ['FPT Shop', ['fpt shop']],
+  ['Điện Máy Xanh', ['dien may xanh', 'dmx']],
+  ['Fahasa', ['fahasa']],
+  ['Viettel', ['viettel']],
+  ['VinaPhone', ['vinaphone']],
+  ['MobiFone', ['mobifone']],
+];
+
+const stripAccents = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
+
+// Trả về tên thương hiệu nếu nhận ra, ngược lại null (khi đó gom theo tên y hệt).
+function merchantKey(detail) {
+  const d = stripAccents((detail || '').toLowerCase()).replace(/\s+/g, ' ').trim();
+  if (!d) return null;
+  for (const [label, keys] of MERCHANT_ALIASES) {
+    for (const k of keys) if (d.includes(k)) return label;
+  }
+  return null;
+}
+
+
 // Vietnamese names for display
 const CAT_NAMES = {food:'Ăn uống',transport:'Di chuyển',shopping:'Mua sắm',entertainment:'Giải trí',bills:'Hóa đơn',health:'Sức khỏe',education:'Học tập',beauty:'Làm đẹp',other:'Khác',savings:'Tiết kiệm'};
 CATEGORIES.forEach(c => c.name = CAT_NAMES[c.id]);
@@ -1066,13 +1132,14 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
       result.push({ icon: '\u{1F525}', title: 'Ngày chi nhiều nhất', subtitle: d.getDate() + '/' + (d.getMonth()+1) + ' (' + dayNames[d.getDay()] + ') — ' + fmtShort(maxAmt), color: '#f97316' });
     }
 
-    // 2b. Biggest single things you spent on (identical names grouped into one)
+    // 2b. Biggest single things you spent on — same brand, or same name, counts as one
     const byName = {};
     spendingExpenses.forEach(e => {
       const raw = (e.detail || '').trim();
       if (!raw) return;
-      const key = raw.toLowerCase().replace(/\s+/g, ' ');
-      if (!byName[key]) byName[key] = { label: raw, total: 0, count: 0, cats: {} };
+      const brand = merchantKey(raw);
+      const key = brand ? '@' + brand : stripAccents(raw.toLowerCase()).replace(/\s+/g, ' ');
+      if (!byName[key]) byName[key] = { label: brand || raw, total: 0, count: 0, cats: {} };
       const g = byName[key];
       g.total += e.amount;
       g.count += 1;
