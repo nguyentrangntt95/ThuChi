@@ -817,7 +817,7 @@ function CategoryMonthly({ cat, expenses, onFilter, dateFrom, dateTo }) {
   `;
 }
 
-function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, dateTo, limits, penaltyNote, monthBudget }) {
+function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, dateTo, limits, penaltyNote, monthBudget, baseLimits }) {
   const [localSel, setLocalSel] = useState(null);
   const selected = onFilter ? (filterCat && filterCat !== 'all' ? filterCat : null) : localSel;
   const setSelected = (id) => onFilter ? onFilter({ cat: id || 'all' }) : setLocalSel(id);
@@ -831,8 +831,8 @@ function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, d
   if (spendingData.length === 0) return null;
   const grandTotal = spendingData.reduce((s, d) => s + d.total, 0);
 
-  const overCats = limits ? spendingData.filter(d => limits[d.id] > 0 && d.total > limits[d.id]) : [];
-  const nearCats = limits ? spendingData.filter(d => limits[d.id] > 0 && d.total <= limits[d.id] && d.total >= limits[d.id] * 0.8) : [];
+  const overCats = limits ? spendingData.filter(d => limits[d.id] >= 0 && d.total > limits[d.id]) : [];
+  const nearCats = limits ? spendingData.filter(d => limits[d.id] >= 0 && d.total <= limits[d.id] && d.total >= limits[d.id] * 0.8) : [];
   const penalized = dateFrom && dateFrom.slice(0, 7) >= PENALTY_START;
   const overPen = overCats.filter(d => PENALTY_CATS.includes(d.id));
   return html`
@@ -841,7 +841,7 @@ function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, d
         <div style="background:#ef4444;color:#fff;border-radius:10px;padding:8px 10px;margin-bottom:10px">
           <p style="font-size:13px;font-weight:800">\u{1F6A8} LỐ HẠN MỨC ${overCats.length} DANH MỤC</p>
           <p style="font-size:11px;margin-top:2px;opacity:.95">${overCats.map(d => d.emoji + ' ' + d.name + ' +' + fmtShort(d.total - limits[d.id])).join(' · ')}</p>
-          ${overPen.length > 0 && penalized && html`<p style="font-size:11px;margin-top:3px;font-weight:700">⚖️ ${overPen.map(d => d.name).join(', ')}: phạt cuối tháng, nộp ${overPen.map(d => fmtShort(computeFine(d.total - limits[d.id], limits[d.id], monthBudget))).join(' + ')} vào Tiết kiệm và trừ hạn mức tháng sau</p>`}
+          ${overPen.length > 0 && penalized && html`<p style="font-size:11px;margin-top:3px;font-weight:700">⚖️ ${overPen.map(d => d.name).join(', ')}: phạt cuối tháng, nộp ${overPen.map(d => fmtShort(computeFine(d.total - limits[d.id], limits[d.id], monthBudget))).join(' + ')} vào Tiết kiệm, tháng sau trần chỉ còn ${overPen.map(d => catMap[d.id].name + ' ' + fmtShort(Math.max(0, ((baseLimits && baseLimits[d.id]) || limits[d.id]) - (d.total - limits[d.id])))).join(', ')}</p>`}
           ${overPen.length > 0 && !penalized && html`<p style="font-size:11px;margin-top:3px;font-weight:700">⚖️ Tháng làm quen, chưa phạt. Từ T${parseInt(PENALTY_START.slice(5), 10)} lố thế này sẽ nộp ${overPen.map(d => fmtShort(computeFine(d.total - limits[d.id], limits[d.id], monthBudget))).join(' + ')} và bị trừ hạn mức tháng sau</p>`}
         </div>
       `}
@@ -858,16 +858,16 @@ function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, d
           ${spendingData.map(d => html`
             <div key=${d.id} class="flex items-center gap-2" onClick=${() => setSelected(selected === d.id ? null : d.id)}
               style="cursor:pointer;border-radius:6px;padding:2px 4px;margin:0 -4px;${
-                limits && limits[d.id] > 0 && d.total > limits[d.id] ? 'background:rgba(239,68,68,0.12)'
-                : limits && limits[d.id] > 0 && d.total >= limits[d.id] * 0.8 ? 'background:rgba(245,158,11,0.12)'
+                limits && limits[d.id] >= 0 && d.total > limits[d.id] ? 'background:rgba(239,68,68,0.12)'
+                : limits && limits[d.id] >= 0 && d.total >= limits[d.id] * 0.8 ? 'background:rgba(245,158,11,0.12)'
                 : selected === d.id ? 'background:rgba(128,128,128,0.12)' : ''}">
               <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:${d.hex}"></span>
               <span class="text-xs text-zinc-600 dark:text-zinc-400 truncate" style="${selected === d.id ? 'font-weight:600' : ''}">${d.emoji} ${d.name}</span>
-              ${limits && limits[d.id] > 0 && d.total > limits[d.id] && html`<span style="font-size:9px;font-weight:800;color:#fff;background:#ef4444;border-radius:4px;padding:1px 4px;letter-spacing:.04em">LỐ</span>`}
-              ${limits && limits[d.id] > 0 && d.total <= limits[d.id] && d.total >= limits[d.id] * 0.8 && html`<span style="font-size:9px;font-weight:800;color:#fff;background:#f59e0b;border-radius:4px;padding:1px 4px">SẮP LỐ</span>`}
+              ${limits && limits[d.id] >= 0 && d.total > limits[d.id] && html`<span style="font-size:9px;font-weight:800;color:#fff;background:#ef4444;border-radius:4px;padding:1px 4px;letter-spacing:.04em">LỐ</span>`}
+              ${limits && limits[d.id] >= 0 && d.total <= limits[d.id] && d.total >= limits[d.id] * 0.8 && html`<span style="font-size:9px;font-weight:800;color:#fff;background:#f59e0b;border-radius:4px;padding:1px 4px">SẮP LỐ</span>`}
               <span class="ml-auto text-xs font-semibold text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${fmtShort(d.total)} <span class="text-zinc-400 font-normal">${Math.round(d.total/grandTotal*100)}%</span></span>
             </div>
-            ${limits && limits[d.id] > 0 && (() => {
+            ${limits && limits[d.id] >= 0 && (() => {
               const lim = limits[d.id], r = d.total / lim;
               const col = r > 1 ? '#ef4444' : r >= 0.8 ? '#f59e0b' : '#22c55e';
               return html`
@@ -1596,12 +1596,10 @@ function StreakCard({ expenses }) {
 const DEFAULT_LIMITS = { food: 21, health: 15, shopping: 17.5, other: 11.5, beauty: 10, entertainment: 7.5, bills: 3.5, education: 2.5, transport: 1.5 };
 const PENALTY_CATS = ['shopping', 'beauty'];
 const PENALTY_START = '2026-10';        // T9 là tháng làm quen, phạt bắt đầu tính từ T10
-// Phạt theo mức độ lố: lố càng sâu so với trần, tỷ lệ nộp càng cao
-const PENALTY_TIERS = [ [0.10, 0.05], [0.30, 0.10], [0.50, 0.15], [Infinity, 0.20] ]; // [lố ≤ x% trần, tỷ lệ phạt]
-const PENALTY_MIN = 50000;
-const PENALTY_CAP_PCT = 0.05;           // trần mềm: không quá 5% ngân sách tháng
-const penaltyRate = (over, limit) => { const r = limit > 0 ? over / limit : 1; for (const [th, rate] of PENALTY_TIERS) if (r <= th) return rate; return 0.20; };
-const CARRY_CAP = 0.5;                  // hạn mức tháng sau không bị trừ quá 50%
+// Phạt theo mức độ lố: lố càng sâu so với trần, tỷ lệ nộp càng cao. Không có trần.
+const PENALTY_TIERS = [ [0.10, 0.20], [0.30, 0.30], [0.50, 0.40], [Infinity, 0.50] ]; // [lố ≤ x% trần, tỷ lệ phạt]
+const PENALTY_MIN = 100000;
+const penaltyRate = (over, limit) => { const r = limit > 0 ? over / limit : 1; for (const [th, rate] of PENALTY_TIERS) if (r <= th) return rate; return 0.50; };
 const prevMonthOf = (m) => { const y = +m.slice(0, 4), mo = +m.slice(5, 7); return mo === 1 ? (y - 1) + '-12' : y + '-' + String(mo - 1).padStart(2, '0'); };
 const budgetAmountOf = (budgets, m) => {
   const b = budgets[m];
@@ -1609,19 +1607,24 @@ const budgetAmountOf = (budgets, m) => {
   if (typeof b === 'number') return b;
   return b.amount || (b.income ? b.income - (b.savings_target || 0) : 15000000);
 };
-// Hạn mức thực tế của một danh mục trong tháng = % × ngân sách tháng − phần lố tháng trước (tối đa trừ 50%)
+const baseLimitOf = (cat, m, catLimits, budgets) => catLimits[cat] ? Math.round(budgetAmountOf(budgets, m) * catLimits[cat] / 100) : 0;
+// Phần lố phải bù ĐỦ: lố tháng trước trừ hết vào tháng này; nếu tháng này không đủ để trừ,
+// phần còn dư dồn tiếp sang tháng kế (tối đa lần ngược 12 tháng).
+const carryInto = (cat, m, catLimits, penalties, budgets, depth = 0) => {
+  const pm = prevMonthOf(m);
+  const rec = penalties[pm] && penalties[pm][cat];
+  const own = rec && rec.carry ? rec.carry : 0;
+  if (depth >= 12 || !Object.keys(penalties).some(k => k < pm)) return own;
+  const leftover = Math.max(0, carryInto(cat, pm, catLimits, penalties, budgets, depth + 1) - baseLimitOf(cat, pm, catLimits, budgets));
+  return own + leftover;
+};
+// Hạn mức thực tế = % × ngân sách tháng − phần lố còn nợ. Có thể về 0.
 const computeLimit = (cat, m, catLimits, penalties, budgets) => {
-  const pct = catLimits[cat];
-  if (!pct) return 0;
-  const base = Math.round(budgetAmountOf(budgets, m) * pct / 100);
-  const carry = (penalties[prevMonthOf(m)] && penalties[prevMonthOf(m)][cat] && penalties[prevMonthOf(m)][cat].carry) || 0;
-  return Math.max(Math.round(base * (1 - CARRY_CAP)), base - carry);
+  const base = baseLimitOf(cat, m, catLimits, budgets);
+  if (!base) return 0;
+  return Math.max(0, base - carryInto(cat, m, catLimits, penalties, budgets));
 };
-const computeFine = (over, limit, monthBudget) => {
-  const raw = Math.round(over * penaltyRate(over, limit) / 10000) * 10000;
-  const cap = monthBudget > 0 ? Math.max(PENALTY_MIN, Math.round(monthBudget * PENALTY_CAP_PCT / 10000) * 10000) : Infinity;
-  return Math.min(cap, Math.max(PENALTY_MIN, raw));
-};
+const computeFine = (over, limit, monthBudget) => Math.max(PENALTY_MIN, Math.round(over * penaltyRate(over, limit) / 10000) * 10000);
 
 function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month }) {
   const [vals, setVals] = useState(() => Object.fromEntries(CATEGORIES.filter(c => c.id !== SAVINGS_CAT).map(c => [c.id, catLimits[c.id] || 0])));
@@ -1652,7 +1655,7 @@ function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month }) {
           <span class="text-sm" style="color:${sum > 100 ? '#ef4444' : mut}">Tổng ${Math.round(sum * 10) / 10}% · Dự phòng ${buffer}%</span>
           <span class="text-sm font-semibold" style="color:${sum > 100 ? '#ef4444' : fg}">${fmtShort(Math.round(monthBudget * Math.max(0, 100 - sum) / 100))}</span>
         </div>
-        <p class="text-xs" style="color:${mut};margin-top:10px;line-height:1.5">⚖️ Mua sắm và Làm đẹp có phạt từ T${parseInt(PENALTY_START.slice(5), 10)}/${PENALTY_START.slice(0, 4)}: vượt hạn mức thì phần lố bị trừ vào hạn mức tháng sau (tối đa trừ ${CARRY_CAP * 100}%), và nộp một phần phần lố vào Tiết kiệm theo bậc: lố ≤10% trần nộp 5%, ≤30% nộp 10%, ≤50% nộp 15%, sâu hơn nộp 20% (tối thiểu ${fmtShort(PENALTY_MIN)}, tối đa ${PENALTY_CAP_PCT * 100}% ngân sách tháng = ${fmtShort(Math.round(monthBudget * PENALTY_CAP_PCT))}). App tự ghi khoản đó ngày đầu tháng.</p>
+        <p class="text-xs" style="color:${mut};margin-top:10px;line-height:1.5">⚖️ Mua sắm và Làm đẹp có phạt từ T${parseInt(PENALTY_START.slice(5), 10)}/${PENALTY_START.slice(0, 4)}: vượt hạn mức thì TOÀN BỘ phần lố bị trừ vào hạn mức tháng sau (trừ chưa hết thì dồn tiếp), và nộp thêm vào Tiết kiệm theo bậc: lố ≤10% trần nộp 20%, ≤30% nộp 30%, ≤50% nộp 40%, sâu hơn nộp 50% phần lố (tối thiểu ${fmtShort(PENALTY_MIN)}, không có trần). App tự ghi khoản đó ngày đầu tháng.</p>
         <button onClick=${() => { if (sum <= 100) onSave(Object.fromEntries(Object.entries(vals).map(([k, v]) => [k, parseFloat(v) || 0]))); }}
           disabled=${sum > 100}
           class="w-full mt-4 py-3 rounded-xl bg-emerald-500 text-white font-medium disabled:opacity-40">Lưu hạn mức</button>
@@ -1738,7 +1741,7 @@ function CheckinModal({ reward, onClose, dark }) {
   `;
 }
 
-function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo, filterCat, onFilter, limits, penaltyNote }) {
+function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo, filterCat, onFilter, limits, penaltyNote, baseLimits }) {
   const monthBudget = budgetAmountOf(budgets, dateFrom.slice(0, 7));
   const [expanded, setExpanded] = useState(() => load('tc-insights', false));
   useEffect(() => { save('tc-insights', expanded); }, [expanded]);
@@ -1746,7 +1749,7 @@ function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, date
   return html`
     <div>
       <${StreakCard} expenses=${allExpenses} />
-      <${CategoryChart} expenses=${rangeExpenses} allExpenses=${allExpenses} filterCat=${filterCat} onFilter=${onFilter} dateFrom=${dateFrom} dateTo=${dateTo} limits=${limits} penaltyNote=${penaltyNote} monthBudget=${monthBudget} />
+      <${CategoryChart} expenses=${rangeExpenses} allExpenses=${allExpenses} filterCat=${filterCat} onFilter=${onFilter} dateFrom=${dateFrom} dateTo=${dateTo} limits=${limits} penaltyNote=${penaltyNote} monthBudget=${monthBudget} baseLimits=${baseLimits} />
       <div class="mx-4 mt-3">
         <button onClick=${() => setExpanded(!expanded)}
           class="w-full flex items-center justify-between px-4 py-2.5 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700">
@@ -2139,7 +2142,7 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
               </button>
             `)}
           </div>
-          ${limInfo && limInfo.limit > 0 && (() => {
+          ${limInfo && (() => {
             const after = limInfo.spent + limInfo.amount;
             const over = after > limInfo.limit;
             const near = !over && after >= limInfo.limit * 0.8;
@@ -2466,7 +2469,7 @@ function App() {
           const spent = expData.filter(e => e.date.slice(0, 7) === pm && e.category === cat).reduce((s, e) => s + e.amount, 0);
           const lim = computeLimit(cat, pm, limitsNow, pen, budData);
           const over = spent - lim;
-          if (lim > 0 && over > 0) {
+          if (baseLimitOf(cat, pm, limitsNow, budData) > 0 && over > 0) {
             const fine = computeFine(over, lim, budgetAmountOf(budData, pm));
             const id = uid();
             rec[cat] = { over, fine, carry: over, expense_id: id };
@@ -2534,9 +2537,14 @@ function App() {
     if (!dateFrom.endsWith('-01') || dateFrom.slice(0, 7) !== dateTo.slice(0, 7)) return null;
     const m = dateFrom.slice(0, 7);
     const out = {};
-    CATEGORIES.forEach(c => { const l = computeLimit(c.id, m, catLimits, penalties, budgets); if (l > 0) out[c.id] = l; });
+    CATEGORIES.forEach(c => { const l = computeLimit(c.id, m, catLimits, penalties, budgets); if (baseLimitOf(c.id, m, catLimits, budgets) > 0) out[c.id] = l; });
     return out;
   }, [dateFrom, dateTo, catLimits, penalties, budgets]);
+  const baseLimitsForRange = useMemo(() => {
+    if (!limitsForRange) return null;
+    const m = dateFrom.slice(0, 7);
+    return Object.fromEntries(CATEGORIES.map(c => [c.id, baseLimitOf(c.id, m, catLimits, budgets)]));
+  }, [limitsForRange, dateFrom, catLimits, budgets]);
   const penaltyNote = useMemo(() => {
     if (!limitsForRange) return null;
     const m = dateFrom.slice(0, 7), pm = prevMonthOf(m);
@@ -2547,8 +2555,8 @@ function App() {
   }, [limitsForRange, penalties, dateFrom]);
   const limitCheck = useCallback((cat, date, amount, excludeId) => {
     const m = (date || today()).slice(0, 7);
+    if (!baseLimitOf(cat, m, catLimits, budgets)) return null;
     const limit = computeLimit(cat, m, catLimits, penalties, budgets);
-    if (!limit) return null;
     const spent = expenses.filter(e => e.date.slice(0, 7) === m && e.category === cat && e.id !== excludeId).reduce((s, e) => s + e.amount, 0);
     return { month: m, limit, spent, amount, penalized: PENALTY_CATS.includes(cat) && m >= PENALTY_START };
   }, [catLimits, penalties, budgets, expenses]);
@@ -2902,7 +2910,7 @@ function App() {
             })}
           </div>
         `}
-        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} dateFrom=${dateFrom} dateTo=${dateTo} filterCat=${filterCat} onFilter=${applyFilter} limits=${limitsForRange} penaltyNote=${penaltyNote} />
+        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} dateFrom=${dateFrom} dateTo=${dateTo} filterCat=${filterCat} onFilter=${applyFilter} limits=${limitsForRange} penaltyNote=${penaltyNote} baseLimits=${baseLimitsForRange} />
 
         <div class="px-4 mt-4" id="expense-list" style="scroll-margin-top:8px">
           <div class="relative flex items-center">
