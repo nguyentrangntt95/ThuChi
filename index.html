@@ -11,6 +11,10 @@
 @keyframes fadeIn { from { opacity:0; } to { opacity:1; } }
 @keyframes spin { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
 .slide-up { animation: slideUp 0.25s ease-out; }
+@keyframes confettiFall { 0% { transform:translateY(-10vh) rotate(0deg); opacity:1; } 100% { transform:translateY(110vh) rotate(720deg); opacity:0.2; } }
+@keyframes popIn { 0% { transform:scale(0.6); opacity:0; } 70% { transform:scale(1.06); opacity:1; } 100% { transform:scale(1); } }
+.confetti { position:fixed; top:0; width:8px; height:14px; border-radius:2px; animation:confettiFall linear forwards; pointer-events:none; z-index:10000; }
+.pop-in { animation: popIn 0.35s cubic-bezier(.2,.9,.3,1.2); }
 .fade-in { animation: fadeIn 0.2s ease-out; }
 .animate-spin { animation: spin 1s linear infinite; }
 
@@ -1515,6 +1519,83 @@ function StreakCard({ expenses }) {
   `;
 }
 
+// ── Check-in hằng ngày: phần thưởng nhỏ khi mở app, để não có "hit" mỗi ngày ──
+const CHECKIN_MILESTONES = { 3: 30, 7: 70, 14: 100, 30: 300, 100: 1000 };
+const CHECKIN_QUOTES = [
+  'Mỗi ngày ghi chép là một ngày tiền không trôi đi vô hình.',
+  'Nhìn thấy tiền đi đâu là bước đầu để giữ nó lại.',
+  'Không cần hoàn hảo, chỉ cần đều.',
+  'Hôm nay tiêu ít hơn hôm qua một chút là đủ thắng.',
+  'Ví của tương lai cảm ơn bạn vì hôm nay.',
+  'Chuỗi này là của bạn, đừng để đứt vì một cú click.',
+  'Tiết kiệm không phải nhịn, là chọn thứ đáng hơn.',
+];
+// Số giả ngẫu nhiên theo ngày: cùng một ngày thì mọi thiết bị ra cùng kết quả
+const daySeed = (d) => { let h = 0; for (const ch of d) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h; };
+
+function computeCheckin(checkins, expenses, t) {
+  const days = new Set(checkins.map(c => c.day));
+  const shift = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  // Chuỗi check-in liên tiếp tính đến hôm nay (hôm nay được tính là sẽ check-in)
+  let streak = 1, d = shift(t, -1);
+  while (days.has(d)) { streak++; d = shift(d, -1); }
+  const y = shift(t, -1);
+  const ySpend = expenses.filter(e => e.date === y && !STREAK_SKIP.has(e.category)).reduce((s, e) => s + e.amount, 0);
+  const yLogged = expenses.some(e => e.date === y);
+  const lines = [{ label: 'Mở app hôm nay', pts: 10 }];
+  if (ySpend <= STREAK_LIMIT) lines.push({ label: ySpend === 0 ? 'Hôm qua không tiêu' : 'Hôm qua dưới ' + fmtShort(STREAK_LIMIT) + ' (' + fmtShort(ySpend) + ')', pts: 20 });
+  else if (yLogged) lines.push({ label: 'Hôm qua có ghi chép (' + fmtShort(ySpend) + ')', pts: 5 });
+  if (streak > 1) lines.push({ label: 'Chuỗi ' + streak + ' ngày', pts: 5 * Math.min(streak, 10) });
+  if (CHECKIN_MILESTONES[streak]) lines.push({ label: '\u{1F3C6} Mốc ' + streak + ' ngày', pts: CHECKIN_MILESTONES[streak] });
+  const seed = daySeed(t);
+  if (seed % 5 === 0) lines.push({ label: '\u{1F340} Bonus may mắn', pts: 50 });
+  const pts = lines.reduce((s, l) => s + l.pts, 0);
+  const total = checkins.reduce((s, c) => s + (c.points || 0), 0) + pts;
+  return { streak, lines, pts, total, quote: CHECKIN_QUOTES[seed % CHECKIN_QUOTES.length], milestone: !!CHECKIN_MILESTONES[streak] };
+}
+
+function Confetti({ n = 36 }) {
+  const colors = ['#f97316', '#ec4899', '#a855f7', '#22c55e', '#3b82f6', '#eab308', '#14b8a6'];
+  const pieces = useMemo(() => Array.from({ length: n }, (_, i) => ({
+    left: Math.random() * 100, delay: Math.random() * 0.8, dur: 1.8 + Math.random() * 1.4,
+    color: colors[i % colors.length], w: 6 + Math.random() * 6, h: 10 + Math.random() * 8,
+  })), [n]);
+  return html`${pieces.map((p, i) => html`<span key=${i} class="confetti" style="left:${p.left}%;background:${p.color};width:${p.w}px;height:${p.h}px;animation-delay:${p.delay}s;animation-duration:${p.dur}s"></span>`)}`;
+}
+
+function CheckinModal({ reward, onClose, dark }) {
+  const [shown, setShown] = useState(0);
+  // Điểm hiện dần từng dòng để có cảm giác "nhận thưởng"
+  useEffect(() => {
+    if (shown >= reward.lines.length) return;
+    const id = setTimeout(() => setShown(shown + 1), 380);
+    return () => clearTimeout(id);
+  }, [shown, reward.lines.length]);
+  const got = reward.lines.slice(0, shown).reduce((s, l) => s + l.pts, 0);
+  return html`
+    <div class="fixed inset-0 z-[9999] flex items-center justify-center fade-in" style="background:rgba(0,0,0,0.55);padding:16px" onClick=${onClose}>
+      <${Confetti} />
+      <div class="pop-in w-full" style="max-width:340px;background:${dark ? '#1e293b' : '#fff'};border-radius:20px;padding:24px 20px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.35)" onClick=${e => e.stopPropagation()}>
+        <div style="font-size:52px;line-height:1">${reward.milestone ? '\u{1F3C6}' : reward.streak >= 7 ? '\u{1F525}' : '\u{1F381}'}</div>
+        <p class="text-xs font-semibold" style="color:${dark ? '#94a3b8' : '#71717a'};margin-top:10px;letter-spacing:.08em;text-transform:uppercase">Check-in ngày ${reward.streak}</p>
+        <p style="font-size:40px;font-weight:800;line-height:1.1;margin-top:4px;color:${dark ? '#fbbf24' : '#d97706'}">+${got}</p>
+        <p class="text-xs" style="color:${dark ? '#94a3b8' : '#a1a1aa'}">điểm</p>
+        <div style="margin-top:14px;text-align:left" class="space-y-1.5">
+          ${reward.lines.map((l, i) => html`
+            <div key=${i} class="flex items-center justify-between text-sm" style="opacity:${i < shown ? 1 : 0.15};transition:opacity .3s">
+              <span style="color:${dark ? '#e2e8f0' : '#3f3f46'}">${l.label}</span>
+              <span style="font-weight:700;color:${dark ? '#fbbf24' : '#d97706'}">+${l.pts}</span>
+            </div>
+          `)}
+        </div>
+        <p class="text-xs" style="margin-top:14px;color:${dark ? '#94a3b8' : '#71717a'};font-style:italic">“${reward.quote}”</p>
+        <p class="text-xs" style="margin-top:8px;color:${dark ? '#64748b' : '#a1a1aa'}">Tổng ⭐ ${fmt(reward.total)} điểm</p>
+        <button onClick=${onClose} class="w-full mt-4 py-2.5 rounded-xl text-sm font-semibold text-white" style="background:linear-gradient(135deg,#f59e0b,#ec4899)">Nhận thưởng</button>
+      </div>
+    </div>
+  `;
+}
+
 function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo, filterCat, onFilter }) {
   const [expanded, setExpanded] = useState(() => load('tc-insights', false));
   useEffect(() => { save('tc-insights', expanded); }, [expanded]);
@@ -2135,6 +2216,8 @@ function App() {
   const [dateFrom, setDateFrom] = useState(() => today().slice(0,8) + '01');
   const [dateTo, setDateTo] = useState(() => today());
   const [modal, setModal] = useState(null);
+  const [checkins, setCheckins] = useState([]);
+  const [checkinReward, setCheckinReward] = useState(null);
   const [filterCat, setFilterCat] = useState('all');
   const [filterProject, setFilterProject] = useState('');
   const [showQR, setShowQR] = useState(false);
@@ -2195,15 +2278,25 @@ function App() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [expData, budData, catPatterns, projData] = await Promise.all([
+      const [expData, budData, catPatterns, projData, ciData] = await Promise.all([
         apiCall('/api/expenses'),
         apiCall('/api/budgets'),
         apiCall('/api/category-patterns'),
-        apiCall('/api/projects')
+        apiCall('/api/projects'),
+        apiCall('/api/checkins').catch(() => [])
       ]);
       setExpenses(expData);
       setBudgets(budData);
       setProjects(projData || []);
+      const ci = Array.isArray(ciData) ? ciData : [];
+      setCheckins(ci);
+      // Check-in mỗi ngày một lần: server chặn trùng, nên mở trên 2 thiết bị vẫn chỉ nhận thưởng 1 lần
+      const t = today();
+      if (!ci.some(c => c.day === t) && Array.isArray(expData)) {
+        const reward = computeCheckin(ci, expData, t);
+        const r = await apiCall('/api/checkins', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ day: t, points: reward.pts, note: reward.lines.map(l => l.label).join(' · ') }) }).catch(() => ({}));
+        if (r && r.created) { setCheckins([...ci, { day: t, points: reward.pts }]); setCheckinReward(reward); }
+      }
       // Learn from server-side AI patterns (high priority)
       if (catPatterns && typeof catPatterns === 'object') {
         for (const [detail, cat] of Object.entries(catPatterns)) {
@@ -2511,6 +2604,7 @@ function App() {
           <div class="flex items-center gap-2">
             <h1 class="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Thu Chi</h1>
             <span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium">${userCode}</span>
+            ${checkins.length > 0 && html`<span class="px-2 py-0.5 rounded-full text-xs font-semibold" style="background:${dark ? 'rgba(245,158,11,0.15)' : '#fffbeb'};color:${dark ? '#fbbf24' : '#b45309'}" title="Điểm check-in · chuỗi ngày">⭐ ${fmtShort(checkins.reduce((s, c) => s + (c.points || 0), 0))}</span>`}
           </div>
           <div class="relative">
             <button onClick=${() => setShowSettings(!showSettings)}
@@ -2547,6 +2641,7 @@ function App() {
         </div>
       </header>
 
+      ${checkinReward && html`<${CheckinModal} reward=${checkinReward} dark=${dark} onClose=${() => setCheckinReward(null)} />`}
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} expenses=${expenses} />
         <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} />

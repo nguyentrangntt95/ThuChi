@@ -78,6 +78,16 @@ def init_db():
         )
     """)
     cur.execute("""
+        CREATE TABLE IF NOT EXISTS checkins (
+            user_code TEXT NOT NULL,
+            day TEXT NOT NULL,
+            points INTEGER DEFAULT 0,
+            note TEXT DEFAULT '',
+            created_at TIMESTAMP DEFAULT NOW(),
+            PRIMARY KEY (user_code, day)
+        )
+    """)
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS projects (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
@@ -894,6 +904,44 @@ def set_budget():
     conn.close()
     notify_clients(user_code)
     return jsonify({"ok": True})
+
+# ── Daily check-in (reward loop) ──
+
+@app.route("/api/checkins")
+@require_auth
+def list_checkins():
+    user_code = get_user_code()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT day, points, note FROM checkins WHERE user_code=%s ORDER BY day", (user_code,))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return jsonify([{"day": r["day"], "points": r["points"], "note": r["note"]} for r in rows])
+
+@app.route("/api/checkins", methods=["POST"])
+@require_auth
+def add_checkin():
+    data = request.json or {}
+    user_code = get_user_code()
+    day = str(data.get("day", ""))[:10]
+    if len(day) != 10:
+        return jsonify({"error": "bad day"}), 400
+    points = int(data.get("points", 0) or 0)
+    note = str(data.get("note", ""))[:200]
+    conn = get_db()
+    cur = conn.cursor()
+    # One check-in per day: a second device the same day just gets created=False
+    cur.execute(
+        """INSERT INTO checkins (user_code, day, points, note) VALUES (%s, %s, %s, %s)
+           ON CONFLICT (user_code, day) DO NOTHING RETURNING day""",
+        (user_code, day, points, note)
+    )
+    created = cur.fetchone() is not None
+    conn.commit()
+    cur.close()
+    conn.close()
+    return jsonify({"ok": True, "created": created})
 
 # ── Projects ──
 
