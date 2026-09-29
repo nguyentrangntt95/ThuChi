@@ -1137,6 +1137,34 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
     const prevToStr = dateFrom;
     const prevExpenses = allExpenses.filter(e => e.date >= prevFromStr && e.date < prevToStr && e.category !== SAVINGS_CAT);
     const prevTotal = prevExpenses.reduce((s, e) => s + e.amount, 0);
+
+    // Trung bình các tháng: tối đa 6 tháng TRỌN VẸN trước tháng đang xem (tháng đang xem
+    // thường chưa hết nên không tính vào). Chỉ so khi khung lọc dài cỡ một tháng, kẻo
+    // đem "Tuần này" so với trung bình tháng thì vô nghĩa.
+    const curMonth = dateFrom.slice(0, 7);
+    const monthTotals = {}, monthCats = {};
+    allExpenses.forEach(e => {
+      if (e.category === SAVINGS_CAT) return;
+      const m = e.date.slice(0, 7);
+      if (m >= curMonth) return;
+      monthTotals[m] = (monthTotals[m] || 0) + e.amount;
+      if (!monthCats[m]) monthCats[m] = {};
+      monthCats[m][e.category] = (monthCats[m][e.category] || 0) + e.amount;
+    });
+    const avgMonths = Object.keys(monthTotals).sort().slice(-6);
+    const nAvg = avgMonths.length;
+    const isMonthish = rangeDays >= 20 && rangeDays <= 31 && dateFrom.endsWith('-01');
+    const avgTotal = nAvg > 0 ? Math.round(avgMonths.reduce((s, m) => s + monthTotals[m], 0) / nAvg) : 0;
+    const avgCat = (c) => nAvg > 0 ? Math.round(avgMonths.reduce((s, m) => s + (monthCats[m][c] || 0), 0) / nAvg) : 0;
+    const vsAvg = (cur, avg) => {
+      if (!avg) return '';
+      const pct = Math.round((cur - avg) / avg * 100);
+      return ' (' + (pct > 0 ? '+' : '') + pct + '% so TB)';
+    };
+    const avgLine = (isMonthish && nAvg >= 2 && avgTotal > 0) ? {
+      text: 'TB ' + nAvg + ' tháng trước: ' + fmtShort(avgTotal) + ' · tháng này ' + fmtShort(total) + vsAvg(total, avgTotal),
+      color: total > avgTotal ? '#ef4444' : '#10b981',
+    } : null;
     if (prevTotal > 0) {
       const diff = total - prevTotal;
       const diffPct = Math.round(Math.abs(diff) / prevTotal * 100);
@@ -1161,12 +1189,15 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
         const name = CAT_NAMES[cd.cat] || cat.name;
         const cur = curCatTotals[cd.cat] || 0;
         const prev = prevCatTotals[cd.cat] || 0;
+        const a = isMonthish && nAvg >= 2 ? avgCat(cd.cat) : 0;
         return {
           text: cat.emoji + ' ' + name + ': ' + fmtShort(prev) + ' → ' + fmtShort(cur)
-            + ' (' + (cd.diff > 0 ? '+' : '-') + fmtShort(Math.abs(cd.diff)) + ')',
+            + ' (' + (cd.diff > 0 ? '+' : '-') + fmtShort(Math.abs(cd.diff)) + ')'
+            + (a > 0 ? ' · TB ' + fmtShort(a) : ''),
           color: cd.diff > 0 ? '#ef4444' : '#10b981',
         };
       });
+      if (avgLine) topChanges.unshift(avgLine);
 
       if (diff > 0) {
         result.push({ icon: '\u{1F4C8}', title: 'Tăng ' + diffPct + '% so kỳ trước', subtitle: fmtShort(prevTotal) + ' → ' + fmtShort(total), details: topChanges, color: '#ef4444' });
@@ -1276,6 +1307,7 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
         const c = cmp('TB/lần', prevAvgPerTx, avgPerTx);
         lines.push({ text: txCount + ' giao dịch' + (prevTxCount ? ' (kỳ trước ' + prevTxCount + ')' : '') + ' · ' + c.text, color: c.color });
       }
+      if (avgLine && !(prevTotal > 0 && total !== prevTotal)) lines.unshift(avgLine);
       result.push({ icon: '\u{1F4CA}', title: 'Thống kê', details: lines, color: '#6366f1' });
     }
 
