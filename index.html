@@ -833,6 +833,7 @@ function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, d
 
   const overCats = limits ? spendingData.filter(d => limits[d.id] > 0 && d.total > limits[d.id]) : [];
   const nearCats = limits ? spendingData.filter(d => limits[d.id] > 0 && d.total <= limits[d.id] && d.total >= limits[d.id] * 0.8) : [];
+  const penalized = dateFrom && dateFrom.slice(0, 7) >= PENALTY_START;
   const overPen = overCats.filter(d => PENALTY_CATS.includes(d.id));
   return html`
     <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border ${overCats.length ? '' : 'border-zinc-200 dark:border-zinc-700'}" style="${overCats.length ? 'border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,0.18)' : ''}">
@@ -840,7 +841,8 @@ function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, d
         <div style="background:#ef4444;color:#fff;border-radius:10px;padding:8px 10px;margin-bottom:10px">
           <p style="font-size:13px;font-weight:800">\u{1F6A8} LỐ HẠN MỨC ${overCats.length} DANH MỤC</p>
           <p style="font-size:11px;margin-top:2px;opacity:.95">${overCats.map(d => d.emoji + ' ' + d.name + ' +' + fmtShort(d.total - limits[d.id])).join(' · ')}</p>
-          ${overPen.length > 0 && html`<p style="font-size:11px;margin-top:3px;font-weight:700">⚖️ ${overPen.map(d => d.name).join(', ')}: phạt cuối tháng, nộp ${overPen.map(d => fmtShort(computeFine(d.total - limits[d.id]))).join(' + ')} vào Tiết kiệm và trừ hạn mức tháng sau</p>`}
+          ${overPen.length > 0 && penalized && html`<p style="font-size:11px;margin-top:3px;font-weight:700">⚖️ ${overPen.map(d => d.name).join(', ')}: phạt cuối tháng, nộp ${overPen.map(d => fmtShort(computeFine(d.total - limits[d.id]))).join(' + ')} vào Tiết kiệm và trừ hạn mức tháng sau</p>`}
+          ${overPen.length > 0 && !penalized && html`<p style="font-size:11px;margin-top:3px;font-weight:700">⚖️ Tháng làm quen, chưa phạt. Từ T${parseInt(PENALTY_START.slice(5), 10)} lố thế này sẽ nộp ${overPen.map(d => fmtShort(computeFine(d.total - limits[d.id]))).join(' + ')} và bị trừ hạn mức tháng sau</p>`}
         </div>
       `}
       ${overCats.length === 0 && nearCats.length > 0 && html`
@@ -1545,7 +1547,7 @@ function StreakCard({ expenses }) {
       if (!first || e.date < first) first = e.date;
     });
     const t = today();
-    if (!first) return { cur: 0, best: 0, monthOk: 0, monthDays: 0, strip: [], savedVsAvg: 0 };
+    if (!first) return null;
     const ok = (d) => (byDay[d] || 0) <= STREAK_LIMIT;
     const shift = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
     // Chuỗi hiện tại: đếm lùi từ hôm nay
@@ -1564,6 +1566,7 @@ function StreakCard({ expenses }) {
     return { cur, best, monthOk, monthDays: dayNum, strip };
   }, [expenses]);
 
+  if (!st) return null;
   const msg = st.cur === 0 ? 'Hôm nay đã tiêu quá ' + fmtShort(STREAK_LIMIT) + ' · mai làm lại nhé'
     : st.cur === 1 ? 'Bắt đầu chuỗi mới, giữ tiếp nhé'
     : st.cur >= st.best && st.best > 1 ? 'Kỷ lục mới! Giữ vững nhé' : 'Đang giữ chuỗi, cố lên';
