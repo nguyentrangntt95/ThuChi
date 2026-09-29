@@ -779,7 +779,8 @@ function PieChart({ data, grandTotal }) {
 }
 
 // Bấm vào một danh mục trong legend -> bảng chi của danh mục đó theo từng tháng
-function CategoryMonthly({ cat, expenses }) {
+function CategoryMonthly({ cat, expenses, onFilter, dateFrom, dateTo }) {
+  const activeM = (dateFrom && dateTo && dateFrom.slice(0, 7) === dateTo.slice(0, 7) && dateFrom.endsWith('-01')) ? dateFrom.slice(0, 7) : null;
   const rows = useMemo(() => {
     const byMonth = {};
     expenses.forEach(e => { if (e.category === cat.id) byMonth[monthOf(e.date)] = (byMonth[monthOf(e.date)] || 0) + e.amount; });
@@ -794,12 +795,13 @@ function CategoryMonthly({ cat, expenses }) {
     <div class="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700 fade-in">
       <div class="flex items-center justify-between mb-2">
         <span class="text-xs font-semibold text-zinc-700 dark:text-zinc-300">${cat.emoji} ${cat.name} theo tháng</span>
-        <span class="text-xs text-zinc-400">TB ${fmtShort(avg)}/tháng</span>
+        <span class="text-xs text-zinc-400">TB ${fmtShort(avg)}/tháng · bấm tháng để xem khoản</span>
       </div>
       <div class="space-y-1.5">
         ${rows.map(r => html`
-          <div key=${r.m} class="flex items-center gap-2">
-            <span class="text-xs text-zinc-500 dark:text-zinc-400 shrink-0" style="width:60px">${r.label}</span>
+          <div key=${r.m} class="flex items-center gap-2" onClick=${() => onFilter && onFilter({ cat: cat.id, month: r.m })}
+            style="cursor:pointer;border-radius:6px;padding:2px 4px;margin:0 -4px;${activeM === r.m ? 'background:rgba(128,128,128,0.12)' : ''}">
+            <span class="text-xs text-zinc-500 dark:text-zinc-400 shrink-0" style="width:60px;${activeM === r.m ? 'font-weight:700' : ''}">${r.label}</span>
             <div class="flex-1 rounded-full" style="height:8px;background:rgba(128,128,128,0.12);overflow:hidden">
               <div style="height:100%;width:${max > 0 ? Math.max(2, r.total / max * 100) : 0}%;background:${cat.hex};opacity:${r.total === max ? 1 : 0.7};border-radius:9999px"></div>
             </div>
@@ -811,8 +813,10 @@ function CategoryMonthly({ cat, expenses }) {
   `;
 }
 
-function CategoryChart({ expenses, allExpenses }) {
-  const [selected, setSelected] = useState(null);
+function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, dateTo }) {
+  const [localSel, setLocalSel] = useState(null);
+  const selected = onFilter ? (filterCat && filterCat !== 'all' ? filterCat : null) : localSel;
+  const setSelected = (id) => onFilter ? onFilter({ cat: id || 'all' }) : setLocalSel(id);
   const spendingData = useMemo(() => {
     const totals = {};
     expenses.filter(e => e.category !== SAVINGS_CAT).forEach(e => { totals[e.category] = (totals[e.category] || 0) + e.amount; });
@@ -840,7 +844,7 @@ function CategoryChart({ expenses, allExpenses }) {
           `)}
         </div>
       </div>
-      ${selected && catMap[selected] && html`<${CategoryMonthly} cat=${catMap[selected]} expenses=${allExpenses || expenses} />`}
+      ${selected && catMap[selected] && html`<${CategoryMonthly} cat=${catMap[selected]} expenses=${allExpenses || expenses} onFilter=${onFilter} dateFrom=${dateFrom} dateTo=${dateTo} />`}
     </div>
   `;
 }
@@ -896,7 +900,7 @@ function DailySpendingChart({ expenses }) {
   `;
 }
 
-function MonthlyComparisonChart({ expenses, budgets }) {
+function MonthlyComparisonChart({ expenses, budgets, onFilter }) {
   const [active, setActive] = useState(-1);
   const data = useMemo(() => {
     const byMonth = {};
@@ -930,7 +934,7 @@ function MonthlyComparisonChart({ expenses, budgets }) {
           const monthNum = parseInt(d.month.slice(5));
           const isActive = active === i;
           return html`
-            <g key=${d.month} onMouseEnter=${() => setActive(i)} onClick=${() => setActive(active === i ? -1 : i)} style="cursor:pointer">
+            <g key=${d.month} onMouseEnter=${() => setActive(i)} onClick=${() => { setActive(i); onFilter && onFilter({ month: d.month }); }} style="cursor:pointer">
               <rect x=${x} y=${y} width=${barW} height=${barH} rx="3" fill=${overBudget ? '#ef4444' : '#10b981'} opacity=${isActive ? '1' : '0.8'} />
               ${d.budget > 0 && html`
                 <line x1=${x - 3} y1=${H - pad - (d.budget / max) * (H - pad*2)} x2=${x + barW + 3} y2=${H - pad - (d.budget / max) * (H - pad*2)} stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="3,2" />
@@ -954,7 +958,7 @@ function MonthlyComparisonChart({ expenses, budgets }) {
   `;
 }
 
-function CategoryTrendChart({ expenses }) {
+function CategoryTrendChart({ expenses, onFilter }) {
   const [active, setActive] = useState(-1);
   const data = useMemo(() => {
     const byMonthCat = {};
@@ -988,7 +992,7 @@ function CategoryTrendChart({ expenses }) {
           const isActive = active === i;
           const topY = H - pad - totalH;
           return html`
-            <g key=${d.month} onMouseEnter=${() => setActive(i)} onClick=${() => setActive(active === i ? -1 : i)} style="cursor:pointer">
+            <g key=${d.month} onMouseEnter=${() => setActive(i)} onClick=${() => { setActive(i); onFilter && onFilter({ month: d.month }); }} style="cursor:pointer">
               ${d.cats.filter(c => c.total > 0).map(c => {
                 const segH = max > 0 ? (c.total / max) * (H - pad*2) : 0;
                 yOff -= segH;
@@ -1387,7 +1391,7 @@ function ProjectPanel({ projects, expenses, onAdd, onDelete, inline = false, onS
   `;
 }
 
-function SpendingCalendar({ expenses, dateFrom, dateTo }) {
+function SpendingCalendar({ expenses, dateFrom, dateTo, onFilter }) {
   // Bám theo tháng mới nhất trong khoảng lọc (vd "Năm nay" -> tháng hiện tại)
   const m = (dateTo && dateTo.length >= 7) ? dateTo.slice(0, 7)
     : (dateFrom && dateFrom.length >= 7) ? dateFrom.slice(0, 7) : today().slice(0, 7);
@@ -1439,7 +1443,8 @@ function SpendingCalendar({ expenses, dateFrom, dateTo }) {
           const bg = sp > 0 ? `rgba(244,63,94,${alpha})` : 'rgba(128,128,128,0.07)';
           const outline = isToday ? 'outline:2px solid #3b82f6;outline-offset:-2px;' : '';
           return html`
-            <div key=${d} style="display:flex;flex-direction:column;align-items:center;border-radius:8px;min-height:44px;padding:3px 1px;background:${bg};${outline}">
+            <div key=${d} onClick=${() => sp > 0 && onFilter && onFilter({ day: m + '-' + String(d).padStart(2, '0') })}
+              style="display:flex;flex-direction:column;align-items:center;border-radius:8px;min-height:44px;padding:3px 1px;background:${bg};${outline}${sp > 0 ? 'cursor:pointer;' : ''}">
               <span style="font-size:10px;line-height:1.3;${isToday ? 'color:#3b82f6;font-weight:700' : 'color:#9ca3af'}">${d}</span>
               ${sp > 0 ? html`<span style="font-size:9px;font-weight:700;color:#f43f5e;margin-top:auto;padding-bottom:1px">${fmtCell(sp)}</span>` : ''}
             </div>
@@ -1453,13 +1458,71 @@ function SpendingCalendar({ expenses, dateFrom, dateTo }) {
   `;
 }
 
-function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo }) {
+// ── Streak ngày "nhịn" (không tiêu hoặc tiêu dưới ngưỡng) ──
+// Bỏ Tiết kiệm và Hoá đơn: tiền nhà/điện nước là bắt buộc, không nên làm đứt chuỗi.
+const STREAK_LIMIT = 100000;
+const STREAK_SKIP = new Set([SAVINGS_CAT, 'bills']);
+function StreakCard({ expenses }) {
+  const st = useMemo(() => {
+    const byDay = {};
+    let first = null;
+    expenses.forEach(e => {
+      if (STREAK_SKIP.has(e.category)) return;
+      byDay[e.date] = (byDay[e.date] || 0) + e.amount;
+      if (!first || e.date < first) first = e.date;
+    });
+    const t = today();
+    if (!first) return { cur: 0, best: 0, monthOk: 0, monthDays: 0, strip: [], savedVsAvg: 0 };
+    const ok = (d) => (byDay[d] || 0) <= STREAK_LIMIT;
+    const shift = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+    // Chuỗi hiện tại: đếm lùi từ hôm nay
+    let cur = 0, d = t;
+    while (d >= first && ok(d)) { cur++; d = shift(d, -1); }
+    // Chuỗi dài nhất từ trước tới nay
+    let best = 0, run = 0;
+    for (let x = first; x <= t; x = shift(x, 1)) { run = ok(x) ? run + 1 : 0; if (run > best) best = run; }
+    // Tháng này: số ngày đạt / số ngày đã qua
+    const m = t.slice(0, 7); const dayNum = parseInt(t.slice(8, 10), 10);
+    let monthOk = 0;
+    for (let i = 1; i <= dayNum; i++) { const x = m + '-' + String(i).padStart(2, '0'); if (x >= first && ok(x)) monthOk++; }
+    // Dải 14 ngày gần nhất để nhìn nhanh
+    const strip = [];
+    for (let i = 13; i >= 0; i--) { const x = shift(t, -i); strip.push({ d: x, ok: ok(x), has: x >= first, spend: byDay[x] || 0 }); }
+    return { cur, best, monthOk, monthDays: dayNum, strip };
+  }, [expenses]);
+
+  const msg = st.cur === 0 ? 'Hôm nay đã tiêu quá ' + fmtShort(STREAK_LIMIT) + ' · mai làm lại nhé'
+    : st.cur === 1 ? 'Bắt đầu chuỗi mới, giữ tiếp nhé'
+    : st.cur >= st.best && st.best > 1 ? 'Kỷ lục mới! Giữ vững nhé' : 'Đang giữ chuỗi, cố lên';
+  return html`
+    <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <div class="flex items-center gap-3">
+        <div style="font-size:28px;line-height:1">${st.cur > 0 ? '\u{1F525}' : '\u{1F4A4}'}</div>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-baseline gap-1.5">
+            <span class="text-lg font-bold text-zinc-800 dark:text-zinc-200">${st.cur} ngày</span>
+            <span class="text-xs text-zinc-500 dark:text-zinc-400">không tiêu / dưới ${fmtShort(STREAK_LIMIT)}</span>
+          </div>
+          <p class="text-xs text-zinc-400" style="margin-top:1px">${msg} · kỷ lục ${st.best} · tháng này ${st.monthOk}/${st.monthDays} ngày</p>
+        </div>
+      </div>
+      <div style="display:flex;gap:3px;margin-top:8px">
+        ${st.strip.map(x => html`
+          <div key=${x.d} title="${x.d}: ${fmtShort(x.spend)}" style="flex:1;height:6px;border-radius:3px;background:${!x.has ? 'rgba(128,128,128,0.1)' : x.ok ? '#22c55e' : 'rgba(244,63,94,0.55)'}"></div>
+        `)}
+      </div>
+    </div>
+  `;
+}
+
+function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo, filterCat, onFilter }) {
   const [expanded, setExpanded] = useState(() => load('tc-insights', false));
   useEffect(() => { save('tc-insights', expanded); }, [expanded]);
 
   return html`
     <div>
-      <${CategoryChart} expenses=${rangeExpenses} allExpenses=${allExpenses} />
+      <${StreakCard} expenses=${allExpenses} />
+      <${CategoryChart} expenses=${rangeExpenses} allExpenses=${allExpenses} filterCat=${filterCat} onFilter=${onFilter} dateFrom=${dateFrom} dateTo=${dateTo} />
       <div class="mx-4 mt-3">
         <button onClick=${() => setExpanded(!expanded)}
           class="w-full flex items-center justify-between px-4 py-2.5 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700">
@@ -1470,10 +1533,10 @@ function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, date
       ${expanded && html`
         <div class="fade-in">
           <${TextInsights} rangeExpenses=${rangeExpenses} allExpenses=${allExpenses} budgets=${budgets} dateFrom=${dateFrom} dateTo=${dateTo} />
-          <${SpendingCalendar} expenses=${allExpenses} dateFrom=${dateFrom} dateTo=${dateTo} />
+          <${SpendingCalendar} expenses=${allExpenses} dateFrom=${dateFrom} dateTo=${dateTo} onFilter=${onFilter} />
           <${DailySpendingChart} expenses=${rangeExpenses.filter(e => e.category !== SAVINGS_CAT)} />
-          <${MonthlyComparisonChart} expenses=${allExpenses.filter(e => e.category !== SAVINGS_CAT)} budgets=${budgets} />
-          <${CategoryTrendChart} expenses=${allExpenses.filter(e => e.category !== SAVINGS_CAT)} />
+          <${MonthlyComparisonChart} expenses=${allExpenses.filter(e => e.category !== SAVINGS_CAT)} budgets=${budgets} onFilter=${onFilter} />
+          <${CategoryTrendChart} expenses=${allExpenses.filter(e => e.category !== SAVINGS_CAT)} onFilter=${onFilter} />
           <${TopExpenses} expenses=${rangeExpenses.filter(e => e.category !== SAVINGS_CAT)} />
           <${WeekdayChart} expenses=${rangeExpenses.filter(e => e.category !== SAVINGS_CAT)} />
         </div>
@@ -2178,6 +2241,21 @@ function App() {
     [expenses, dateFrom, dateTo]
   );
 
+  // Drill-down từ dashboard: bấm danh mục / tháng / ngày ở bất kỳ biểu đồ nào -> thành bộ lọc chung
+  const applyFilter = ({ cat, month, day } = {}) => {
+    if (cat !== undefined) setFilterCat(cat);
+    if (month) {
+      const y = parseInt(month.slice(0, 4), 10), mo = parseInt(month.slice(5, 7), 10);
+      const last = new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10);
+      setDateFrom(month + '-01'); setDateTo(last);
+    }
+    if (day) { setDateFrom(day); setDateTo(day); }
+    if (month || day) {
+      setSearchQuery('');
+      setTimeout(() => { const el = document.getElementById('expense-list'); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 120);
+    }
+  };
+
   const filtered = useMemo(() => {
     let result = filterCat === 'all' ? rangeExpenses : rangeExpenses.filter(e => e.category === filterCat);
     if (filterProject) result = result.filter(e => e.project_id === filterProject);
@@ -2504,9 +2582,9 @@ function App() {
             })}
           </div>
         `}
-        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} dateFrom=${dateFrom} dateTo=${dateTo} />
+        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} dateFrom=${dateFrom} dateTo=${dateTo} filterCat=${filterCat} onFilter=${applyFilter} />
 
-        <div class="px-4 mt-4">
+        <div class="px-4 mt-4" id="expense-list" style="scroll-margin-top:8px">
           <div class="relative flex items-center">
             <svg class="absolute" style="left:0.75rem" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input type="text" value=${searchQuery} onInput=${e => setSearchQuery(e.target.value)}
