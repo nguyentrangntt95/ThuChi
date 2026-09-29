@@ -1601,13 +1601,15 @@ const PENALTY_TIERS = [ [0.10, 0.20], [0.30, 0.30], [0.50, 0.40], [Infinity, 0.5
 const PENALTY_MIN = 100000;
 const penaltyRate = (over, limit) => { const r = limit > 0 ? over / limit : 1; for (const [th, rate] of PENALTY_TIERS) if (r <= th) return rate; return 0.50; };
 const prevMonthOf = (m) => { const y = +m.slice(0, 4), mo = +m.slice(5, 7); return mo === 1 ? (y - 1) + '-12' : y + '-' + String(mo - 1).padStart(2, '0'); };
-const budgetAmountOf = (budgets, m) => {
+// Tiền phạt tháng trước (nộp vào Tiết kiệm ngày 1) bị trừ thẳng khỏi số được tiêu tháng này
+const finesFor = (penalties, m) => { const rec = penalties && penalties[prevMonthOf(m)]; return rec ? Object.values(rec).reduce((s, r) => s + (r.fine || 0), 0) : 0; };
+const budgetAmountOf = (budgets, m, penalties) => {
   const b = budgets[m];
-  if (!b) return 15000000;
-  if (typeof b === 'number') return b;
-  return b.amount || (b.income ? b.income - (b.savings_target || 0) : 15000000);
+  let base = 15000000;
+  if (b) base = typeof b === 'number' ? b : (b.amount || (b.income ? b.income - (b.savings_target || 0) : 15000000));
+  return Math.max(0, base - finesFor(penalties, m));
 };
-const baseLimitOf = (cat, m, catLimits, budgets) => catLimits[cat] ? Math.round(budgetAmountOf(budgets, m) * catLimits[cat] / 100) : 0;
+const baseLimitOf = (cat, m, catLimits, budgets, penalties) => catLimits[cat] ? Math.round(budgetAmountOf(budgets, m, penalties) * catLimits[cat] / 100) : 0;
 // Phần lố phải bù ĐỦ: lố tháng trước trừ hết vào tháng này; nếu tháng này không đủ để trừ,
 // phần còn dư dồn tiếp sang tháng kế (tối đa lần ngược 12 tháng).
 const carryInto = (cat, m, catLimits, penalties, budgets, depth = 0) => {
@@ -1615,12 +1617,12 @@ const carryInto = (cat, m, catLimits, penalties, budgets, depth = 0) => {
   const rec = penalties[pm] && penalties[pm][cat];
   const own = rec && rec.carry ? rec.carry : 0;
   if (depth >= 12 || !Object.keys(penalties).some(k => k < pm)) return own;
-  const leftover = Math.max(0, carryInto(cat, pm, catLimits, penalties, budgets, depth + 1) - baseLimitOf(cat, pm, catLimits, budgets));
+  const leftover = Math.max(0, carryInto(cat, pm, catLimits, penalties, budgets, depth + 1) - baseLimitOf(cat, pm, catLimits, budgets, penalties));
   return own + leftover;
 };
 // Hạn mức thực tế = % × ngân sách tháng − phần lố còn nợ. Có thể về 0.
 const computeLimit = (cat, m, catLimits, penalties, budgets) => {
-  const base = baseLimitOf(cat, m, catLimits, budgets);
+  const base = baseLimitOf(cat, m, catLimits, budgets, penalties);
   if (!base) return 0;
   return Math.max(0, base - carryInto(cat, m, catLimits, penalties, budgets));
 };
@@ -1741,8 +1743,7 @@ function CheckinModal({ reward, onClose, dark }) {
   `;
 }
 
-function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo, filterCat, onFilter, limits, penaltyNote, baseLimits }) {
-  const monthBudget = budgetAmountOf(budgets, dateFrom.slice(0, 7));
+function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo, filterCat, onFilter, limits, penaltyNote, baseLimits, monthBudget }) {
   const [expanded, setExpanded] = useState(() => load('tc-insights', false));
   useEffect(() => { save('tc-insights', expanded); }, [expanded]);
 
@@ -2469,8 +2470,8 @@ function App() {
           const spent = expData.filter(e => e.date.slice(0, 7) === pm && e.category === cat).reduce((s, e) => s + e.amount, 0);
           const lim = computeLimit(cat, pm, limitsNow, pen, budData);
           const over = spent - lim;
-          if (baseLimitOf(cat, pm, limitsNow, budData) > 0 && over > 0) {
-            const fine = computeFine(over, lim, budgetAmountOf(budData, pm));
+          if (baseLimitOf(cat, pm, limitsNow, budData, pen) > 0 && over > 0) {
+            const fine = computeFine(over, lim, budgetAmountOf(budData, pm, pen));
             const id = uid();
             rec[cat] = { over, fine, carry: over, expense_id: id };
             newExps.push({ id, date: curM + '-01', category: SAVINGS_CAT, amount: fine, project_id: '',
@@ -2537,14 +2538,14 @@ function App() {
     if (!dateFrom.endsWith('-01') || dateFrom.slice(0, 7) !== dateTo.slice(0, 7)) return null;
     const m = dateFrom.slice(0, 7);
     const out = {};
-    CATEGORIES.forEach(c => { const l = computeLimit(c.id, m, catLimits, penalties, budgets); if (baseLimitOf(c.id, m, catLimits, budgets) > 0) out[c.id] = l; });
+    CATEGORIES.forEach(c => { const l = computeLimit(c.id, m, catLimits, penalties, budgets); if (baseLimitOf(c.id, m, catLimits, budgets, penalties) > 0) out[c.id] = l; });
     return out;
   }, [dateFrom, dateTo, catLimits, penalties, budgets]);
   const baseLimitsForRange = useMemo(() => {
     if (!limitsForRange) return null;
     const m = dateFrom.slice(0, 7);
-    return Object.fromEntries(CATEGORIES.map(c => [c.id, baseLimitOf(c.id, m, catLimits, budgets)]));
-  }, [limitsForRange, dateFrom, catLimits, budgets]);
+    return Object.fromEntries(CATEGORIES.map(c => [c.id, baseLimitOf(c.id, m, catLimits, budgets, penalties)]));
+  }, [limitsForRange, dateFrom, catLimits, budgets, penalties]);
   const penaltyNote = useMemo(() => {
     if (!limitsForRange) return null;
     const m = dateFrom.slice(0, 7), pm = prevMonthOf(m);
@@ -2555,7 +2556,7 @@ function App() {
   }, [limitsForRange, penalties, dateFrom]);
   const limitCheck = useCallback((cat, date, amount, excludeId) => {
     const m = (date || today()).slice(0, 7);
-    if (!baseLimitOf(cat, m, catLimits, budgets)) return null;
+    if (!baseLimitOf(cat, m, catLimits, budgets, penalties)) return null;
     const limit = computeLimit(cat, m, catLimits, penalties, budgets);
     const spent = expenses.filter(e => e.date.slice(0, 7) === m && e.category === cat && e.id !== excludeId).reduce((s, e) => s + e.amount, 0);
     return { month: m, limit, spent, amount, penalized: PENALTY_CATS.includes(cat) && m >= PENALTY_START };
@@ -2628,12 +2629,7 @@ function App() {
     const toDate = new Date(dateTo + 'T00:00:00');
     const rangeDays = Math.max(1, Math.round((toDate - fromDate) / 86400000) + 1);
 
-    const getBudgetAmount = (m) => {
-      const b = budgets[m];
-      if (!b) return DEFAULT_BUDGET;
-      if (typeof b === 'number') return b; // legacy format
-      return b.amount || (b.income ? b.income - (b.savings_target || 0) : DEFAULT_BUDGET);
-    };
+    const getBudgetAmount = (m) => budgetAmountOf(budgets, m, penalties);
     const getBudgetData = (m) => {
       const b = budgets[m];
       if (!b) return { income: 0, savings_target: 0 };
@@ -2664,7 +2660,7 @@ function App() {
       d.setMonth(d.getMonth() + 1);
     }
     return { total, months: count, label: fromMonth, fullMonth: false, income: 0, savings_target: 0 };
-  }, [dateFrom, dateTo, budgets]);
+  }, [dateFrom, dateTo, budgets, penalties]);
   const monthBudget = budgetInfo.total;
 
   // Daily-remaining mode: chỉ cho filter "Hôm nay" và "Tuần này".
@@ -2685,6 +2681,7 @@ function App() {
       if (typeof b === 'number') mBudget = b;
       else { income = b.income || 0; savings_target = b.savings_target || 0; mBudget = b.amount || (income ? income - savings_target : DEFAULT_BUDGET); }
     }
+    mBudget = Math.max(0, mBudget - finesFor(penalties, m));
     const monthSpent = expenses.filter(e => e.date.slice(0, 7) === m && e.category !== SAVINGS_CAT).reduce((s, e) => s + e.amount, 0);
     const monthSavings = expenses.filter(e => e.date.slice(0, 7) === m && e.category === SAVINGS_CAT).reduce((s, e) => s + e.amount, 0);
 
@@ -2709,7 +2706,7 @@ function App() {
     const daysLeftInWeek = Math.max(1, wEnd - todayDate + 1);
     const dailyRemain = (weekBudget - weekSpentSoFar) / daysLeftInWeek;
     return { month: m, monthBudget: mBudget, monthSpent, monthSavings, dailyRemain, weekBudget, income, savings_target };
-  }, [dateFrom, dateTo, budgets, expenses]);
+  }, [dateFrom, dateTo, budgets, expenses, penalties]);
 
   // Week-budget mode: cho filter "Tuần X" (Thứ 2 -> CN) của tháng hiện tại.
   // Budget tuần cuốn chiếu: tuần hiện tại = (ngân sách tháng - đã chi các tuần trước) / số tuần còn lại.
@@ -2727,6 +2724,7 @@ function App() {
       if (typeof b === 'number') mBudget = b;
       else mBudget = b.amount || (b.income ? b.income - (b.savings_target || 0) : DEFAULT_BUDGET);
     }
+    mBudget = Math.max(0, mBudget - finesFor(penalties, m));
     const spendIn = (f, to) => expenses.filter(e => e.date >= f && e.date <= to && e.category !== SAVINGS_CAT).reduce((s, e) => s + e.amount, 0);
     const saveIn = (f, to) => expenses.filter(e => e.date >= f && e.date <= to && e.category === SAVINGS_CAT).reduce((s, e) => s + e.amount, 0);
 
@@ -2736,7 +2734,7 @@ function App() {
     const weekSpend = spendIn(weekRanges[idx][0], weekRanges[idx][1]);
     const weekSavings = saveIn(weekRanges[idx][0], weekRanges[idx][1]);
     return { weekNum: idx + 1, weekBudget, weekSpend, weekSavings, month: m };
-  }, [dateFrom, dateTo, budgets, expenses]);
+  }, [dateFrom, dateTo, budgets, expenses, penalties]);
 
   // Chọn props cho BudgetBar theo chế độ đang xem
   const budgetBarProps = weekInfo ? {
@@ -2874,7 +2872,7 @@ function App() {
       </header>
 
       ${checkinReward && html`<${CheckinModal} reward=${checkinReward} dark=${dark} onClose=${() => setCheckinReward(null)} />`}
-      ${showLimits && html`<${LimitsModal} catLimits=${catLimits} onSave=${saveLimits} onClose=${() => setShowLimits(false)} dark=${dark} month=${budgetMonth} monthBudget=${budgetAmountOf(budgets, budgetMonth)} />`}
+      ${showLimits && html`<${LimitsModal} catLimits=${catLimits} onSave=${saveLimits} onClose=${() => setShowLimits(false)} dark=${dark} month=${budgetMonth} monthBudget=${budgetAmountOf(budgets, budgetMonth, penalties)} />`}
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} expenses=${expenses} />
         <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} />
@@ -2910,7 +2908,7 @@ function App() {
             })}
           </div>
         `}
-        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} dateFrom=${dateFrom} dateTo=${dateTo} filterCat=${filterCat} onFilter=${applyFilter} limits=${limitsForRange} penaltyNote=${penaltyNote} baseLimits=${baseLimitsForRange} />
+        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} dateFrom=${dateFrom} dateTo=${dateTo} filterCat=${filterCat} onFilter=${applyFilter} limits=${limitsForRange} penaltyNote=${penaltyNote} baseLimits=${baseLimitsForRange} monthBudget=${budgetAmountOf(budgets, dateFrom.slice(0, 7), penalties)} />
 
         <div class="px-4 mt-4" id="expense-list" style="scroll-margin-top:8px">
           <div class="relative flex items-center">
