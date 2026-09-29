@@ -817,7 +817,7 @@ function CategoryMonthly({ cat, expenses, onFilter, dateFrom, dateTo }) {
   `;
 }
 
-function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, dateTo }) {
+function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, dateTo, limits, penaltyNote }) {
   const [localSel, setLocalSel] = useState(null);
   const selected = onFilter ? (filterCat && filterCat !== 'all' ? filterCat : null) : localSel;
   const setSelected = (id) => onFilter ? onFilter({ cat: id || 'all' }) : setLocalSel(id);
@@ -831,8 +831,23 @@ function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, d
   if (spendingData.length === 0) return null;
   const grandTotal = spendingData.reduce((s, d) => s + d.total, 0);
 
+  const overCats = limits ? spendingData.filter(d => limits[d.id] > 0 && d.total > limits[d.id]) : [];
+  const nearCats = limits ? spendingData.filter(d => limits[d.id] > 0 && d.total <= limits[d.id] && d.total >= limits[d.id] * 0.8) : [];
+  const overPen = overCats.filter(d => PENALTY_CATS.includes(d.id));
   return html`
-    <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+    <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border ${overCats.length ? '' : 'border-zinc-200 dark:border-zinc-700'}" style="${overCats.length ? 'border-color:#ef4444;box-shadow:0 0 0 3px rgba(239,68,68,0.18)' : ''}">
+      ${overCats.length > 0 && html`
+        <div style="background:#ef4444;color:#fff;border-radius:10px;padding:8px 10px;margin-bottom:10px">
+          <p style="font-size:13px;font-weight:800">\u{1F6A8} LỐ HẠN MỨC ${overCats.length} DANH MỤC</p>
+          <p style="font-size:11px;margin-top:2px;opacity:.95">${overCats.map(d => d.emoji + ' ' + d.name + ' +' + fmtShort(d.total - limits[d.id])).join(' · ')}</p>
+          ${overPen.length > 0 && html`<p style="font-size:11px;margin-top:3px;font-weight:700">⚖️ ${overPen.map(d => d.name).join(', ')}: phạt cuối tháng, nộp ${overPen.map(d => fmtShort(computeFine(d.total - limits[d.id]))).join(' + ')} vào Tiết kiệm và trừ hạn mức tháng sau</p>`}
+        </div>
+      `}
+      ${overCats.length === 0 && nearCats.length > 0 && html`
+        <div style="background:rgba(245,158,11,0.15);color:#b45309;border:1px solid #f59e0b;border-radius:10px;padding:7px 10px;margin-bottom:10px">
+          <p style="font-size:12px;font-weight:700">⚠️ Sắp chạm trần: ${nearCats.map(d => d.emoji + ' ' + d.name + ' còn ' + fmtShort(limits[d.id] - d.total)).join(' · ')}</p>
+        </div>
+      `}
       <div class="flex gap-3 items-center">
         <div class="shrink-0" style="width:140px;max-width:35%">
           <${PieChart} data=${spendingData} grandTotal=${grandTotal} />
@@ -840,14 +855,36 @@ function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, d
         <div class="flex-1 min-w-0 space-y-1.5">
           ${spendingData.map(d => html`
             <div key=${d.id} class="flex items-center gap-2" onClick=${() => setSelected(selected === d.id ? null : d.id)}
-              style="cursor:pointer;border-radius:6px;padding:2px 4px;margin:0 -4px;${selected === d.id ? 'background:rgba(128,128,128,0.12)' : ''}">
+              style="cursor:pointer;border-radius:6px;padding:2px 4px;margin:0 -4px;${
+                limits && limits[d.id] > 0 && d.total > limits[d.id] ? 'background:rgba(239,68,68,0.12)'
+                : limits && limits[d.id] > 0 && d.total >= limits[d.id] * 0.8 ? 'background:rgba(245,158,11,0.12)'
+                : selected === d.id ? 'background:rgba(128,128,128,0.12)' : ''}">
               <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background-color:${d.hex}"></span>
               <span class="text-xs text-zinc-600 dark:text-zinc-400 truncate" style="${selected === d.id ? 'font-weight:600' : ''}">${d.emoji} ${d.name}</span>
+              ${limits && limits[d.id] > 0 && d.total > limits[d.id] && html`<span style="font-size:9px;font-weight:800;color:#fff;background:#ef4444;border-radius:4px;padding:1px 4px;letter-spacing:.04em">LỐ</span>`}
+              ${limits && limits[d.id] > 0 && d.total <= limits[d.id] && d.total >= limits[d.id] * 0.8 && html`<span style="font-size:9px;font-weight:800;color:#fff;background:#f59e0b;border-radius:4px;padding:1px 4px">SẮP LỐ</span>`}
               <span class="ml-auto text-xs font-semibold text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${fmtShort(d.total)} <span class="text-zinc-400 font-normal">${Math.round(d.total/grandTotal*100)}%</span></span>
             </div>
+            ${limits && limits[d.id] > 0 && (() => {
+              const lim = limits[d.id], r = d.total / lim;
+              const col = r > 1 ? '#ef4444' : r >= 0.8 ? '#f59e0b' : '#22c55e';
+              return html`
+                <div key=${d.id + '-lim'} class="flex items-center gap-2" style="margin:-2px 0 3px 18px">
+                  <div class="flex-1 rounded-full" style="height:4px;background:rgba(128,128,128,0.15);overflow:hidden"><div style="height:100%;width:${Math.min(100, r * 100)}%;background:${col};border-radius:9999px"></div></div>
+                  <span style="font-size:10px;color:${col};white-space:nowrap;min-width:64px;text-align:right">${r > 1 ? 'lố ' + fmtShort(d.total - lim) : 'còn ' + fmtShort(lim - d.total)} / ${fmtShort(lim)}</span>
+                </div>`;
+            })()}
           `)}
         </div>
       </div>
+      ${penaltyNote && penaltyNote.items.length > 0 && html`
+        <div class="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
+          <p class="text-xs font-semibold" style="color:#ef4444">⚖️ Phạt tháng ${parseInt(penaltyNote.month.slice(5), 10)}</p>
+          ${penaltyNote.items.map(p => html`
+            <p key=${p.cat} class="text-xs text-zinc-600 dark:text-zinc-400" style="margin-top:3px">${catMap[p.cat].emoji} ${catMap[p.cat].name} lố ${fmtShort(p.over)} → nộp ${fmtShort(p.fine)} vào Tiết kiệm, hạn mức tháng này còn ${fmtShort(p.newLimit)}</p>
+          `)}
+        </div>
+      `}
       ${selected && catMap[selected] && html`<${CategoryMonthly} cat=${catMap[selected]} expenses=${allExpenses || expenses} onFilter=${onFilter} dateFrom=${dateFrom} dateTo=${dateTo} />`}
     </div>
   `;
@@ -1551,6 +1588,69 @@ function StreakCard({ expenses }) {
   `;
 }
 
+// ── Hạn mức danh mục (theo % ngân sách tháng) + phạt Mua sắm / Làm đẹp ──
+// Mặc định lấy từ phân tích 6 tháng T4–T9/2026, tổng 90%, 10% còn lại là dự phòng.
+const DEFAULT_LIMITS = { food: 21, health: 15, shopping: 17.5, other: 11.5, beauty: 10, entertainment: 7.5, bills: 3.5, education: 2.5, transport: 1.5 };
+const PENALTY_CATS = ['shopping', 'beauty'];
+const PENALTY_START = '2026-10';        // T9 là tháng làm quen, phạt bắt đầu tính từ T10
+const PENALTY_RATE = 0.10;              // nộp 10% phần lố vào tiết kiệm
+const PENALTY_MIN = 50000, PENALTY_MAX = 300000;
+const CARRY_CAP = 0.5;                  // hạn mức tháng sau không bị trừ quá 50%
+const prevMonthOf = (m) => { const y = +m.slice(0, 4), mo = +m.slice(5, 7); return mo === 1 ? (y - 1) + '-12' : y + '-' + String(mo - 1).padStart(2, '0'); };
+const budgetAmountOf = (budgets, m) => {
+  const b = budgets[m];
+  if (!b) return 15000000;
+  if (typeof b === 'number') return b;
+  return b.amount || (b.income ? b.income - (b.savings_target || 0) : 15000000);
+};
+// Hạn mức thực tế của một danh mục trong tháng = % × ngân sách tháng − phần lố tháng trước (tối đa trừ 50%)
+const computeLimit = (cat, m, catLimits, penalties, budgets) => {
+  const pct = catLimits[cat];
+  if (!pct) return 0;
+  const base = Math.round(budgetAmountOf(budgets, m) * pct / 100);
+  const carry = (penalties[prevMonthOf(m)] && penalties[prevMonthOf(m)][cat] && penalties[prevMonthOf(m)][cat].carry) || 0;
+  return Math.max(Math.round(base * (1 - CARRY_CAP)), base - carry);
+};
+const computeFine = (over) => Math.min(PENALTY_MAX, Math.max(PENALTY_MIN, Math.round(over * PENALTY_RATE / 10000) * 10000));
+
+function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month }) {
+  const [vals, setVals] = useState(() => Object.fromEntries(CATEGORIES.filter(c => c.id !== SAVINGS_CAT).map(c => [c.id, catLimits[c.id] || 0])));
+  const sum = Object.values(vals).reduce((s, v) => s + (parseFloat(v) || 0), 0);
+  const buffer = Math.round((100 - sum) * 10) / 10;
+  const bg = dark ? '#1e293b' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#334155' : '#e4e4e7';
+  return html`
+    <div class="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center fade-in" style="background:rgba(0,0,0,0.55)" onClick=${onClose}>
+      <div class="w-full slide-up" style="max-width:420px;background:${bg};border-radius:20px 20px 0 0;padding:20px 16px 24px;max-height:92vh;overflow-y:auto" onClick=${e => e.stopPropagation()}>
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="font-bold" style="color:${fg};font-size:16px">\u{1F3AF} Hạn mức danh mục</h3>
+          <button onClick=${onClose} style="color:${mut};font-size:20px;line-height:1">×</button>
+        </div>
+        <p class="text-xs" style="color:${mut}">% của ngân sách tháng (lương − tiết kiệm). Tháng ${parseInt(month.slice(5), 10)}: ngân sách ${fmtShort(monthBudget)}.</p>
+        <div class="space-y-2" style="margin-top:14px">
+          ${CATEGORIES.filter(c => c.id !== SAVINGS_CAT).map(c => html`
+            <div key=${c.id} class="flex items-center gap-2">
+              <span class="text-sm" style="color:${fg};width:110px">${c.emoji} ${c.name}</span>
+              <input type="number" step="0.5" min="0" max="100" value=${vals[c.id]} onInput=${e => setVals({ ...vals, [c.id]: e.target.value })}
+                style="width:64px;padding:6px 8px;border-radius:8px;border:1px solid ${bd};background:${dark ? '#0f172a' : '#fafafa'};color:${fg};font-size:14px;text-align:right" />
+              <span class="text-xs" style="color:${mut}">%</span>
+              <span class="ml-auto text-sm font-semibold" style="color:${fg}">${fmtShort(Math.round(monthBudget * (parseFloat(vals[c.id]) || 0) / 100))}</span>
+              ${PENALTY_CATS.includes(c.id) && html`<span title="Có phạt khi vượt" style="font-size:12px">⚖️</span>`}
+            </div>
+          `)}
+        </div>
+        <div class="flex items-center justify-between" style="margin-top:14px;padding-top:10px;border-top:1px solid ${bd}">
+          <span class="text-sm" style="color:${sum > 100 ? '#ef4444' : mut}">Tổng ${Math.round(sum * 10) / 10}% · Dự phòng ${buffer}%</span>
+          <span class="text-sm font-semibold" style="color:${sum > 100 ? '#ef4444' : fg}">${fmtShort(Math.round(monthBudget * Math.max(0, 100 - sum) / 100))}</span>
+        </div>
+        <p class="text-xs" style="color:${mut};margin-top:10px;line-height:1.5">⚖️ Mua sắm và Làm đẹp có phạt từ T${parseInt(PENALTY_START.slice(5), 10)}/${PENALTY_START.slice(0, 4)}: vượt hạn mức thì phần lố bị trừ vào hạn mức tháng sau (tối đa trừ ${CARRY_CAP * 100}%), và nộp ${PENALTY_RATE * 100}% phần lố vào Tiết kiệm (${fmtShort(PENALTY_MIN)}–${fmtShort(PENALTY_MAX)}), app tự ghi khoản đó ngày đầu tháng.</p>
+        <button onClick=${() => { if (sum <= 100) onSave(Object.fromEntries(Object.entries(vals).map(([k, v]) => [k, parseFloat(v) || 0]))); }}
+          disabled=${sum > 100}
+          class="w-full mt-4 py-3 rounded-xl bg-emerald-500 text-white font-medium disabled:opacity-40">Lưu hạn mức</button>
+      </div>
+    </div>
+  `;
+}
+
 // ── Check-in hằng ngày: phần thưởng nhỏ khi mở app, để não có "hit" mỗi ngày ──
 const CHECKIN_MILESTONES = { 3: 30, 7: 70, 14: 100, 30: 300, 100: 1000 };
 const CHECKIN_QUOTES = [
@@ -1628,14 +1728,14 @@ function CheckinModal({ reward, onClose, dark }) {
   `;
 }
 
-function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo, filterCat, onFilter }) {
+function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo, filterCat, onFilter, limits, penaltyNote }) {
   const [expanded, setExpanded] = useState(() => load('tc-insights', false));
   useEffect(() => { save('tc-insights', expanded); }, [expanded]);
 
   return html`
     <div>
       <${StreakCard} expenses=${allExpenses} />
-      <${CategoryChart} expenses=${rangeExpenses} allExpenses=${allExpenses} filterCat=${filterCat} onFilter=${onFilter} dateFrom=${dateFrom} dateTo=${dateTo} />
+      <${CategoryChart} expenses=${rangeExpenses} allExpenses=${allExpenses} filterCat=${filterCat} onFilter=${onFilter} dateFrom=${dateFrom} dateTo=${dateTo} limits=${limits} penaltyNote=${penaltyNote} />
       <div class="mx-4 mt-3">
         <button onClick=${() => setExpanded(!expanded)}
           class="w-full flex items-center justify-between px-4 py-2.5 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-700">
@@ -1766,7 +1866,7 @@ function ExpenseRow({ expense, onEdit, onDelete, project }) {
   `;
 }
 
-function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, projects = [] }) {
+function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, projects = [], limitCheck }) {
   const [date, setDate] = useState(expense?.date || today());
   const [category, setCategory] = useState(expense?.category || 'food');
   const [detail, setDetail] = useState(expense?.detail || '');
@@ -1781,6 +1881,10 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
   const [autoApplied, setAutoApplied] = useState(false);
   const fileRef = useRef(null);
   const amountRef = useRef(null);
+
+  // Hạn mức: khoản này sẽ đưa danh mục lên bao nhiêu so với trần tháng
+  const limInfo = useMemo(() => limitCheck ? limitCheck(category, date, evalAmount(amount) || 0, expense ? expense.id : null) : null,
+    [limitCheck, category, date, amount, expense]);
 
   // Duplicate detection
   const duplicates = useMemo(() => {
@@ -2024,6 +2128,19 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
               </button>
             `)}
           </div>
+          ${limInfo && limInfo.limit > 0 && (() => {
+            const after = limInfo.spent + limInfo.amount;
+            const over = after > limInfo.limit;
+            const near = !over && after >= limInfo.limit * 0.8;
+            const col = over ? '#ef4444' : near ? '#d97706' : '#16a34a';
+            return html`
+              <p class="text-xs mt-1.5" style="color:${col}">
+                ${over ? '⚠️ ' : ''}${catMap[category].name} T${parseInt(limInfo.month.slice(5), 10)}: ${fmtShort(limInfo.spent)} / ${fmtShort(limInfo.limit)}
+                ${limInfo.amount > 0 ? ' → ' + fmtShort(after) : ''}
+                ${over ? ' · vượt ' + fmtShort(after - limInfo.limit) : ' · còn ' + fmtShort(limInfo.limit - after)}
+                ${over && limInfo.penalized ? ' · sẽ bị phạt cuối tháng' : ''}
+              </p>`;
+          })()}
         </div>
 
         ${projects.length > 0 && html`
@@ -2250,6 +2367,9 @@ function App() {
   const [modal, setModal] = useState(null);
   const [checkins, setCheckins] = useState([]);
   const [checkinReward, setCheckinReward] = useState(null);
+  const [catLimits, setCatLimits] = useState(DEFAULT_LIMITS);
+  const [penalties, setPenalties] = useState({});
+  const [showLimits, setShowLimits] = useState(false);
   const [filterCat, setFilterCat] = useState('all');
   const [filterProject, setFilterProject] = useState('');
   const [showQR, setShowQR] = useState(false);
@@ -2310,16 +2430,48 @@ function App() {
 
   const fetchData = useCallback(async () => {
     try {
-      const [expData, budData, catPatterns, projData, ciData] = await Promise.all([
+      const [expData, budData, catPatterns, projData, ciData, settingsData] = await Promise.all([
         apiCall('/api/expenses'),
         apiCall('/api/budgets'),
         apiCall('/api/category-patterns'),
         apiCall('/api/projects'),
-        apiCall('/api/checkins').catch(() => [])
+        apiCall('/api/checkins').catch(() => []),
+        apiCall('/api/settings').catch(() => ({}))
       ]);
       setExpenses(expData);
       setBudgets(budData);
       setProjects(projData || []);
+      const st = (settingsData && typeof settingsData === 'object') ? settingsData : {};
+      const limitsNow = st.cat_limits && Object.keys(st.cat_limits).length ? st.cat_limits : DEFAULT_LIMITS;
+      let pen = st.penalties || {};
+      setCatLimits(limitsNow);
+      setPenalties(pen);
+      // Chốt phạt tháng trước, mỗi tháng một lần. Ghi khoản Tiết kiệm = tiền phạt để bạn chuyển thật.
+      const curM = today().slice(0, 7), pm = prevMonthOf(curM);
+      if (pm >= PENALTY_START && !pen[pm] && Array.isArray(expData) && budData && typeof budData === 'object') {
+        const rec = {};
+        const newExps = [];
+        for (const cat of PENALTY_CATS) {
+          const spent = expData.filter(e => e.date.slice(0, 7) === pm && e.category === cat).reduce((s, e) => s + e.amount, 0);
+          const lim = computeLimit(cat, pm, limitsNow, pen, budData);
+          const over = spent - lim;
+          if (lim > 0 && over > 0) {
+            const fine = computeFine(over);
+            const id = uid();
+            rec[cat] = { over, fine, carry: over, expense_id: id };
+            newExps.push({ id, date: curM + '-01', category: SAVINGS_CAT, amount: fine, project_id: '',
+              detail: 'Phạt vượt ' + catMap[cat].name + ' T' + parseInt(pm.slice(5), 10) + ' (lố ' + fmtShort(over) + ')' });
+          }
+        }
+        pen = { ...pen, [pm]: rec };
+        setPenalties(pen);
+        const saved = await apiCall('/api/settings', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ penalties: pen }) }).catch(() => null);
+        // Chỉ ghi khoản phạt nếu mình là client chốt được trước (tránh 2 thiết bị cùng ghi)
+        if (saved && saved.penalties && saved.penalties[pm] && newExps.length && Object.values(saved.penalties[pm]).some(r => newExps.some(n => n.id === r.expense_id))) {
+          setExpenses(prev => [...prev, ...newExps]);
+          await apiCall('/api/expenses/bulk', { method: 'POST', body: JSON.stringify({ items: newExps }) });
+        }
+      }
       const ci = Array.isArray(ciData) ? ciData : [];
       setCheckins(ci);
       // Check-in mỗi ngày một lần: server chặn trùng, nên mở trên 2 thiết bị vẫn chỉ nhận thưởng 1 lần
@@ -2365,6 +2517,34 @@ function App() {
     expenses.filter(e => e.date >= dateFrom && e.date <= dateTo).sort((a, b) => b.date.localeCompare(a.date) || (b.id || '').localeCompare(a.id || '')),
     [expenses, dateFrom, dateTo]
   );
+
+  // Hạn mức của tháng đang xem (chỉ khi khung lọc là trọn một tháng)
+  const limitsForRange = useMemo(() => {
+    if (!dateFrom.endsWith('-01') || dateFrom.slice(0, 7) !== dateTo.slice(0, 7)) return null;
+    const m = dateFrom.slice(0, 7);
+    const out = {};
+    CATEGORIES.forEach(c => { const l = computeLimit(c.id, m, catLimits, penalties, budgets); if (l > 0) out[c.id] = l; });
+    return out;
+  }, [dateFrom, dateTo, catLimits, penalties, budgets]);
+  const penaltyNote = useMemo(() => {
+    if (!limitsForRange) return null;
+    const m = dateFrom.slice(0, 7), pm = prevMonthOf(m);
+    const rec = penalties[pm];
+    if (!rec) return null;
+    const items = PENALTY_CATS.filter(c => rec[c] && rec[c].over > 0).map(c => ({ cat: c, over: rec[c].over, fine: rec[c].fine, newLimit: limitsForRange[c] || 0 }));
+    return { month: pm, items };
+  }, [limitsForRange, penalties, dateFrom]);
+  const limitCheck = useCallback((cat, date, amount, excludeId) => {
+    const m = (date || today()).slice(0, 7);
+    const limit = computeLimit(cat, m, catLimits, penalties, budgets);
+    if (!limit) return null;
+    const spent = expenses.filter(e => e.date.slice(0, 7) === m && e.category === cat && e.id !== excludeId).reduce((s, e) => s + e.amount, 0);
+    return { month: m, limit, spent, amount, penalized: PENALTY_CATS.includes(cat) && m >= PENALTY_START };
+  }, [catLimits, penalties, budgets, expenses]);
+  const saveLimits = async (vals) => {
+    setCatLimits(vals); setShowLimits(false);
+    await apiCall('/api/settings', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ cat_limits: vals }) });
+  };
 
   // Drill-down từ dashboard: bấm danh mục / tháng / ngày ở bất kỳ biểu đồ nào -> thành bộ lọc chung
   const applyFilter = ({ cat, month, day } = {}) => {
@@ -2650,6 +2830,7 @@ function App() {
                 <div style="padding:6px">
                   ${[
                     { label: dark ? 'Chế độ sáng' : 'Chế độ tối', icon: dark ? '\u2600\uFE0F' : '\u{1F319}', fn: () => setDark(!dark) },
+                    { label: 'Hạn mức danh mục', icon: '\u{1F3AF}', fn: () => { setShowLimits(true); setShowSettings(false); } },
                     { label: 'QR Code', icon: '\u{1F4F1}', fn: () => { setShowQR(true); setShowSettings(false); } },
                     { label: 'Projects' + (projects.length > 0 ? ' (' + projects.length + ')' : ''), icon: '\u{1F4C1}', fn: () => { setShowProjects(true); setShowSettings(false); } },
                     { label: 'Xuất CSV', icon: '\u{1F4E5}', fn: () => { exportCSV(); setShowSettings(false); } },
@@ -2674,6 +2855,7 @@ function App() {
       </header>
 
       ${checkinReward && html`<${CheckinModal} reward=${checkinReward} dark=${dark} onClose=${() => setCheckinReward(null)} />`}
+      ${showLimits && html`<${LimitsModal} catLimits=${catLimits} onSave=${saveLimits} onClose=${() => setShowLimits(false)} dark=${dark} month=${budgetMonth} monthBudget=${budgetAmountOf(budgets, budgetMonth)} />`}
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} expenses=${expenses} />
         <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} />
@@ -2709,7 +2891,7 @@ function App() {
             })}
           </div>
         `}
-        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} dateFrom=${dateFrom} dateTo=${dateTo} filterCat=${filterCat} onFilter=${applyFilter} />
+        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} dateFrom=${dateFrom} dateTo=${dateTo} filterCat=${filterCat} onFilter=${applyFilter} limits=${limitsForRange} penaltyNote=${penaltyNote} />
 
         <div class="px-4 mt-4" id="expense-list" style="scroll-margin-top:8px">
           <div class="relative flex items-center">
@@ -2830,6 +3012,7 @@ function App() {
           allExpenses=${expenses}
           dark=${dark}
           projects=${projects}
+          limitCheck=${limitCheck}
         />
       `}
     </div>

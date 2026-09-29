@@ -78,6 +78,13 @@ def init_db():
         )
     """)
     cur.execute("""
+        CREATE TABLE IF NOT EXISTS user_settings (
+            user_code TEXT PRIMARY KEY,
+            data JSONB DEFAULT '{}'::jsonb,
+            updated_at TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS checkins (
             user_code TEXT NOT NULL,
             day TEXT NOT NULL,
@@ -904,6 +911,41 @@ def set_budget():
     conn.close()
     notify_clients(user_code)
     return jsonify({"ok": True})
+
+# ── User settings (hạn mức danh mục, phạt) ──
+
+@app.route("/api/settings")
+@require_auth
+def get_settings():
+    user_code = get_user_code()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT data FROM user_settings WHERE user_code=%s", (user_code,))
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    return jsonify(row["data"] if row and row["data"] else {})
+
+@app.route("/api/settings", methods=["POST"])
+@require_auth
+def save_settings():
+    data = request.json or {}
+    user_code = get_user_code()
+    conn = get_db()
+    cur = conn.cursor()
+    # Shallow merge so one client saving cat_limits does not wipe penalties saved by another
+    cur.execute(
+        """INSERT INTO user_settings (user_code, data, updated_at) VALUES (%s, %s::jsonb, NOW())
+           ON CONFLICT (user_code) DO UPDATE SET data = user_settings.data || EXCLUDED.data, updated_at = NOW()
+           RETURNING data""",
+        (user_code, json.dumps(data))
+    )
+    row = cur.fetchone()
+    conn.commit()
+    cur.close()
+    conn.close()
+    notify_clients(user_code)
+    return jsonify(row["data"] if row else data)
 
 # ── Daily check-in (reward loop) ──
 
