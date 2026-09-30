@@ -1798,7 +1798,7 @@ const CAT_VOICE = {
 const pick = (arr, seed) => arr[Math.abs(seed) % arr.length];
 
 // ── "Thử tiêu": nhập số + danh mục, app trả lời Nên / Cân nhắc / Không nên, một chạm thành khoản thật ──
-function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onClose }) {
+function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onClose, finance }) {
   const [cat, setCat] = useState('shopping');
   const [amount, setAmount] = useState('');
   const amt = evalAmount(amount) || 0;
@@ -1893,6 +1893,30 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
       if (!essential && level !== 'ok') reasons.push(pick(UPCOMING, seed));
       snap.push('Cùng ' + fmtShort(amt) + ' đem gửi tiết kiệm 8% lãi kép: 6 tháng sau thành ' + fmtShort(grow6m(amt)) + ', 1 năm ' + fmtShort(grow1y(amt)) + ', 5 năm (con vào lớp 1) ' + fmtShort(grow5y(amt)));
     }
+    // Bối cảnh lớn: mục tiêu tài sản, quỹ khẩn cấp, thẻ tín dụng, em bé
+    if (finance && !essential && amt >= 100000) {
+      const f = finance;
+      const net = finNet(f);
+      const gap = (f.goal_amount || 0) - net;
+      const days = f.goal_date ? daysBetween(today(), f.goal_date) : 0;
+      if (gap > 0 && days > 0) {
+        const perDay = gap / days;
+        const setback = amt / perDay;
+        snap.push('Mục tiêu ' + fmtShort(f.goal_amount) + ' đến ' + f.goal_date.slice(8, 10) + '/' + f.goal_date.slice(5, 7) + ': còn thiếu ' + fmtShort(gap) + ', cần ' + fmtShort(Math.round(perDay * 30.4)) + '/tháng' + (f.salary ? ' trong khi lương ' + fmtShort(f.salary) : '')
+          + '. Khoản này lùi mục tiêu ' + (setback >= 1 ? Math.round(setback) + ' ngày' : Math.round(setback * 24) + ' giờ'));
+        if (level !== 'ok' && f.salary && perDay * 30.4 > f.salary) reasons.push('Lương không đủ cho mục tiêu, phần thiếu chỉ bù được bằng nhịn tiêu. Mỗi đồng tuỳ ý là một đồng xa mục tiêu');
+      }
+      const emergency = (f.emergency_months || 0) * (dailyInfo ? dailyInfo.monthBudget : 0);
+      const liquid = (f.savings || 0) + (f.cash || 0);
+      if (emergency > 0 && liquid < emergency) { if (level === 'ok') level = 'wait'; reasons.push('Quỹ khẩn cấp đang thiếu ' + fmtShort(emergency - liquid) + '. Khoan tiêu tuỳ ý cho đến khi đủ'); }
+      if (f.credit_due > 0) snap.push('Tháng này còn phải trả thẻ tín dụng ' + fmtShort(f.credit_due));
+      if (f.baby_due) {
+        const dd = daysBetween(today(), f.baby_due);
+        if (dd > 0) {
+          snap.push('Còn ' + Math.ceil(dd / 7) + ' tuần đến ngày dự sinh' + (f.baby_budget ? ', dự toán ' + fmtShort(f.baby_budget) + ' ≈ ' + fmtShort(Math.round(f.baby_budget / Math.max(1, dd / 30.4))) + '/tháng phải để riêng' : ''));
+        }
+      }
+    }
     const quotePool = voice.quotes || (essential ? null : MINIMAL_QUOTES);
     const quote = quotePool ? pick(quotePool, seed) : null;
     return { level, reasons, snap, tips, quote, human };
@@ -1945,6 +1969,68 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
           <button onClick=${() => amt > 0 && onSpend(cat, amt)} disabled=${amt <= 0}
             class="flex-1 py-3 rounded-xl font-medium text-white disabled:opacity-40" style="background:${v ? v.color : '#10b981'}">${v && v.level === 'no' ? 'Vẫn tiêu (ghi khoản)' : 'Tiêu → thêm khoản'}</button>
         </div>
+      </div>
+    </div>
+  `;
+}
+
+// Tình hình tài chính (ngoài app): số dư, đầu tư, nợ, mục tiêu. Nạp sẵn từ sheet Plan 30/09/2026, bạn tự sửa.
+const DEFAULT_FINANCE = {
+  savings: 342000000,      // tiết kiệm đang có
+  cash: 1450000,           // tiền mặt / TK chi tiêu
+  invest: 655609000,       // cổ phiếu 455.6M + đưa anh đầu tư 200M
+  credit_due: 7316824,     // thẻ tín dụng kỳ trước phải trả tháng này
+  debt: 0,                 // nợ khác
+  salary: 27148000,        // lương ròng mỗi tháng
+  goal_amount: 1300000000, // mục tiêu tài sản
+  goal_date: '2026-12-31',
+  emergency_months: 6,     // quỹ khẩn cấp muốn giữ = N tháng chi tiêu
+  baby_due: '',            // ngày dự sinh (yyyy-mm-dd)
+  baby_budget: 0,          // dự toán sinh + đồ sơ sinh
+  updated: '2026-09-30',
+};
+const FIN_FIELDS = [
+  ['savings', 'Tiết kiệm đang có', 'money'], ['cash', 'Tiền mặt / TK chi tiêu', 'money'], ['invest', 'Đầu tư (cổ phiếu, đưa anh)', 'money'],
+  ['credit_due', 'Thẻ tín dụng phải trả tháng này', 'money'], ['debt', 'Nợ khác', 'money'], ['salary', 'Lương ròng / tháng', 'money'],
+  ['goal_amount', 'Mục tiêu tài sản', 'money'], ['goal_date', 'Hạn đạt mục tiêu', 'date'], ['emergency_months', 'Quỹ khẩn cấp (số tháng chi tiêu)', 'num'],
+  ['baby_due', 'Ngày dự sinh', 'date'], ['baby_budget', 'Dự toán sinh + đồ sơ sinh', 'money'],
+];
+const finNet = (f) => (f.savings || 0) + (f.cash || 0) + (f.invest || 0) - (f.debt || 0) - (f.credit_due || 0);
+const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00Z') - new Date(a + 'T00:00:00Z')) / 86400000);
+
+function FinanceModal({ finance, onSave, onClose, dark, avgSpend }) {
+  const [f, setF] = useState(() => ({ ...DEFAULT_FINANCE, ...finance }));
+  const bg = dark ? '#1e293b' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#334155' : '#e4e4e7';
+  const net = finNet(f);
+  const gap = (f.goal_amount || 0) - net;
+  const days = f.goal_date ? daysBetween(today(), f.goal_date) : 0;
+  const needPerMonth = gap > 0 && days > 0 ? Math.round(gap / (days / 30.4)) : 0;
+  const emergency = (f.emergency_months || 0) * (avgSpend || 0);
+  const setNum = (k, v) => setF({ ...f, [k]: parseInt(String(v).replace(/\D/g, ''), 10) || 0 });
+  return html`
+    <div class="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center fade-in" style="background:rgba(0,0,0,0.55)" onClick=${onClose}>
+      <div class="w-full slide-up" style="max-width:420px;background:${bg};border-radius:20px 20px 0 0;padding:20px 16px 24px;max-height:92vh;overflow-y:auto" onClick=${e => e.stopPropagation()}>
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="font-bold" style="color:${fg};font-size:16px">\u{1F4BC} Tình hình tài chính</h3>
+          <button onClick=${onClose} style="color:${mut};font-size:20px;line-height:1">×</button>
+        </div>
+        <p class="text-xs" style="color:${mut}">Thử tiêu dùng các số này để cân. Cập nhật mỗi đầu tháng${f.updated ? ' · lần cuối ' + f.updated : ''}.</p>
+        <div class="space-y-2" style="margin-top:12px">
+          ${FIN_FIELDS.map(([k, label, type]) => html`
+            <div key=${k} class="flex items-center gap-2">
+              <span class="text-sm" style="color:${fg};flex:1">${label}</span>
+              ${type === 'date'
+                ? html`<input type="date" value=${f[k] || ''} onInput=${e => setF({ ...f, [k]: e.target.value })} style="width:150px;padding:6px 8px;border-radius:8px;border:1px solid ${bd};background:${dark ? '#0f172a' : '#fafafa'};color:${fg};font-size:13px" />`
+                : html`<input type="text" inputMode="numeric" value=${type === 'money' ? fmt(f[k] || 0) : (f[k] || 0)} onInput=${e => setNum(k, e.target.value)} style="width:150px;padding:6px 8px;border-radius:8px;border:1px solid ${bd};background:${dark ? '#0f172a' : '#fafafa'};color:${fg};font-size:13px;text-align:right" />`}
+            </div>
+          `)}
+        </div>
+        <div class="text-xs space-y-1" style="margin-top:14px;padding-top:10px;border-top:1px solid ${bd};color:${mut}">
+          <p>Tài sản ròng: <b style="color:${fg}">${fmtShort(net)}</b>${gap > 0 ? ' · còn thiếu ' + fmtShort(gap) + ' để đạt ' + fmtShort(f.goal_amount) : ' · đã đạt mục tiêu'}</p>
+          ${needPerMonth > 0 && html`<p>Để kịp hạn ${f.goal_date}: cần tích luỹ <b style="color:${needPerMonth > (f.salary || 0) ? '#ef4444' : fg}">${fmtShort(needPerMonth)}/tháng</b>${f.salary ? ', lương ' + fmtShort(f.salary) : ''}</p>`}
+          ${emergency > 0 && html`<p>Quỹ khẩn cấp ${f.emergency_months} tháng ≈ ${fmtShort(emergency)}: <b style="color:${(f.savings || 0) + (f.cash || 0) >= emergency ? '#16a34a' : '#ef4444'}">${(f.savings || 0) + (f.cash || 0) >= emergency ? 'đủ' : 'thiếu ' + fmtShort(emergency - (f.savings || 0) - (f.cash || 0))}</b></p>`}
+        </div>
+        <button onClick=${() => onSave({ ...f, updated: today() })} class="w-full mt-4 py-3 rounded-xl bg-emerald-500 text-white font-medium">Lưu</button>
       </div>
     </div>
   `;
@@ -2708,6 +2794,8 @@ function App() {
   const [penalties, setPenalties] = useState({});
   const [showLimits, setShowLimits] = useState(false);
   const [showTry, setShowTry] = useState(false);
+  const [finance, setFinance] = useState(DEFAULT_FINANCE);
+  const [showFinance, setShowFinance] = useState(false);
   const [filterCat, setFilterCat] = useState('all');
   const [filterProject, setFilterProject] = useState('');
   const [showQR, setShowQR] = useState(false);
@@ -2787,6 +2875,7 @@ function App() {
       }
       let pen = st.penalties || {};
       setCatLimits(limitsNow);
+      setFinance({ ...DEFAULT_FINANCE, ...(st.finance || {}) });
       setPenalties(pen);
       // Chốt phạt tháng trước, mỗi tháng một lần. Ghi khoản Tiết kiệm = tiền phạt để bạn chuyển thật.
       const curM = today().slice(0, 7), pm = prevMonthOf(curM);
@@ -3179,6 +3268,7 @@ function App() {
                   ${[
                     { label: dark ? 'Chế độ sáng' : 'Chế độ tối', icon: dark ? '\u2600\uFE0F' : '\u{1F319}', fn: () => setDark(!dark) },
                     { label: 'Hạn mức danh mục', icon: '\u{1F3AF}', fn: () => { setShowLimits(true); setShowSettings(false); } },
+                    { label: 'Tình hình tài chính', icon: '\u{1F4BC}', fn: () => { setShowFinance(true); setShowSettings(false); } },
                     { label: 'QR Code', icon: '\u{1F4F1}', fn: () => { setShowQR(true); setShowSettings(false); } },
                     { label: 'Projects' + (projects.length > 0 ? ' (' + projects.length + ')' : ''), icon: '\u{1F4C1}', fn: () => { setShowProjects(true); setShowSettings(false); } },
                     { label: 'Xuất CSV', icon: '\u{1F4E5}', fn: () => { exportCSV(); setShowSettings(false); } },
@@ -3204,6 +3294,8 @@ function App() {
 
       ${checkinReward && html`<${CheckinModal} reward=${checkinReward} dark=${dark} onClose=${() => setCheckinReward(null)} />`}
       ${showLimits && html`<${LimitsModal} catLimits=${catLimits} onSave=${saveLimits} onClose=${() => setShowLimits(false)} dark=${dark} month=${budgetMonth} monthBudget=${budgetAmountOf(budgets, budgetMonth, penalties)} />`}
+      ${showFinance && html`<${FinanceModal} finance=${finance} dark=${dark} avgSpend=${budgetAmountOf(budgets, budgetMonth, penalties)} onClose=${() => setShowFinance(false)}
+        onSave=${async (f) => { setFinance(f); setShowFinance(false); await apiCall('/api/settings', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ finance: f }) }); }} />`}
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} expenses=${expenses} />
         <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} />
@@ -3342,7 +3434,7 @@ function App() {
       </div>
 
       ${showQR && html`<${QRModal} onClose=${() => setShowQR(false)} />`}
-      ${showTry && html`<${TrySpendModal} dark=${dark} limitCheck=${limitCheck} dailyInfo=${dailyInfo} monthBudget=${budgetAmountOf(budgets, today().slice(0, 7), penalties)}
+      ${showTry && html`<${TrySpendModal} dark=${dark} limitCheck=${limitCheck} dailyInfo=${dailyInfo} finance=${finance} monthBudget=${budgetAmountOf(budgets, today().slice(0, 7), penalties)}
         onClose=${() => setShowTry(false)}
         onSpend=${(cat, amt) => { setShowTry(false); setModal({ _prefill: true, date: today(), category: cat, amount: amt, detail: '' }); }} />`}
       ${showProjects && html`
