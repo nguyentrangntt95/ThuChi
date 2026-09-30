@@ -1720,6 +1720,17 @@ const WAIT_TIPS_BIG = [     // ≥ 1M
   'Nói với một người: "tao định mua X giá Y". Phải nói ra được thì mới mua.',
 ];
 const waitTipsFor = (amt) => amt < 200000 ? WAIT_TIPS_SMALL : amt < 1000000 ? WAIT_TIPS_MID : WAIT_TIPS_BIG;
+// Chi phí cơ hội: cùng số tiền đem gửi tiết kiệm 8%/năm thì thành bao nhiêu
+const SAVING_RATE = 0.08;
+const grow6m = (a) => Math.round(a * (1 + SAVING_RATE / 2));          // kỳ hạn 6 tháng, lãi cuối kỳ
+const grow1y = (a) => Math.round(a * Math.pow(1 + SAVING_RATE / 12, 12));       // lãi kép theo tháng: ×1,083
+const grow5y = (a) => Math.round(a * Math.pow(1 + SAVING_RATE / 12, 60));       // lãi kép 5 năm, tới lúc con vào lớp 1: ×1,49
+// Những khoản sắp tới không tránh được: nhắc để tiền tuỳ ý hôm nay không giành chỗ của chúng
+const UPCOMING = [
+  'Sắp có con: sinh, sữa, tã, khám định kỳ là những khoản không lùi được. Tiền tuỳ ý hôm nay là tiền của bé ngày mai.',
+  'Mỗi tháng còn phải gửi tiết kiệm theo mục tiêu đã đặt. Khoản này có đang ăn vào phần đó không.',
+  'Con cái là khoản chi lớn nhất và không có "trần" nào cả. Mọi thứ khác đều nên nhường chỗ.',
+];
 
 // Mỗi danh mục một giọng: ưu tiên trong đời sống khác nhau thì cách khích lệ khác nhau.
 // ok = câu nói khi nên tiêu · warn = khi nên chờ / không nên · tips = gợi ý riêng · quotes = câu nhắc riêng
@@ -1876,6 +1887,11 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
     // Khoản tuỳ ý lớn so với nhịp ngày: nói rõ phải "nhịn" bao nhiêu ngày để bù
     if (!essential && level !== 'ok' && dailyInfo && dailyInfo.dailyRemain > 0 && amt >= dailyInfo.dailyRemain * 2) {
       tips.unshift('Để bù khoản này phải tiêu 0đ trong ' + Math.ceil(amt / dailyInfo.dailyRemain) + ' ngày tới');
+    }
+    // Lý do dài hạn cho khoản tuỳ ý: con cái + chi phí cơ hội nếu đem gửi 8%
+    if (!essential && amt >= 100000) {
+      if (level !== 'ok') reasons.push(pick(UPCOMING, seed));
+      snap.push('Cùng ' + fmtShort(amt) + ' đem gửi tiết kiệm 8% lãi kép: 6 tháng sau thành ' + fmtShort(grow6m(amt)) + ', 1 năm ' + fmtShort(grow1y(amt)) + ', 5 năm (con vào lớp 1) ' + fmtShort(grow5y(amt)));
     }
     const quotePool = voice.quotes || (essential ? null : MINIMAL_QUOTES);
     const quote = quotePool ? pick(quotePool, seed) : null;
