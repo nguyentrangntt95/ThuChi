@@ -1,8 +1,13 @@
 /**
  * Sổ Thu Chi ↔ Google Sheet "Investment 2026" — đẩy tình hình tài chính sang app mỗi ngày.
  *
- * CÀI 1 LẦN:
+ * CÀI 1 LẦN (cách A, script gắn trong sheet):
  *  1. Trong sheet: Extensions → Apps Script, xoá code mẫu, dán toàn bộ file này.
+ *
+ * Nếu Google báo "This app is blocked" (tài khoản bật Advanced Protection / bị admin chặn) → dùng cách B:
+ *  1. Đăng nhập Google bằng tài khoản KHÁC đã được share sheet (vd trangkeke95@gmail.com),
+ *     vào https://script.google.com → New project, dán file này. Script tự mở sheet theo SHEET_ID.
+ *     Các bước 2–4 y hệt.
  *  2. Trong app Thu Chi: Settings (bánh răng) → "Sao chép token (Sheet sync)".
  *  3. Dán token vào dòng TOKEN bên dưới, bấm Save (Ctrl+S), chọn hàm `setup` ở thanh trên rồi bấm Run.
  *     Google sẽ hỏi quyền (đọc sheet + gọi URL ngoài) → Cho phép.
@@ -16,6 +21,12 @@
 const APP_URL = 'https://thuchi-production-1d0c.up.railway.app';
 const TOKEN = '';          // dán token vào đây, chạy setup() một lần, rồi xoá
 const PLAN_SHEET = 'Plan';
+// ID sheet "Investment 2026". Để script chạy ĐỘC LẬP (script.google.com) bằng tài khoản khác, chỉ cần tài khoản đó được share Viewer.
+const SHEET_ID = '1IW6F9O0afDrxuZdqbzFdbZGGsqGwCXHlkT_FoYAE7Ks';
+function openSheet() {
+  const active = SpreadsheetApp.getActive();          // script gắn trong sheet
+  return active ? active : SpreadsheetApp.openById(SHEET_ID);   // script độc lập
+}
 
 function setup() {
   if (TOKEN) PropertiesService.getScriptProperties().setProperty('TC_TOKEN', TOKEN);
@@ -35,7 +46,7 @@ function money(v) {
 }
 
 function readPlan() {
-  const sh = SpreadsheetApp.getActive().getSheetByName(PLAN_SHEET);
+  const sh = openSheet().getSheetByName(PLAN_SHEET);
   if (!sh) throw new Error('Không thấy tab ' + PLAN_SHEET);
   const vals = sh.getRange(1, 1, sh.getLastRow(), 8).getValues();   // A..H
 
