@@ -198,7 +198,7 @@ Không đọc được gì → []"""
 # Step 2: Categorize extracted items using AI + user history
 CATEGORIZE_PROMPT = """Bạn là trợ lý phân loại chi tiêu. Hãy phân loại từng khoản chi tiêu dưới đây vào đúng category.
 
-CÁC CATEGORY HỢP LỆ: food, transport, shopping, entertainment, bills, health, education, beauty, savings, other
+CÁC CATEGORY HỢP LỆ: food, transport, shopping, entertainment, bills, health, education, beauty, relationship, savings, other
 
 QUY TẮC PHÂN LOẠI:
 - MOCA, GrabFood, GrabMart, ShopeeFood, Baemin, tên nhà hàng/quán ăn/cafe (Starbucks, Highland, Phúc Long, KFC, McDonald's, Jollibee, Pizza Hut, Lotteria, The Coffee House, Cộng Cà Phê, trà sữa, cơm, phở, bún, bánh mì...) → food
@@ -210,6 +210,7 @@ QUY TẮC PHÂN LOẠI:
 - Học phí, sách, khóa học, Udemy, Coursera → education
 - Mỹ phẩm, skincare, spa, làm tóc, làm nail, thẩm mỹ → beauty
 - Gửi tiết kiệm, đầu tư, tích lũy, để dành → savings
+- Quà tặng, sinh nhật, mừng cưới, lì xì, thăm hỏi, biếu bố mẹ, hiếu hỉ, chuyển tiền cho người thân/bạn, từ thiện → relationship
 - Không rõ → other
 
 {history_rules}
@@ -610,7 +611,7 @@ def step2_categorize(items, user_code=None):
         if not isinstance(categories, list):
             categories = [categories]
 
-        valid_cats = {'food','transport','shopping','entertainment','bills','health','education','beauty','savings','other'}
+        valid_cats = {'food','transport','shopping','entertainment','bills','health','education','beauty','relationship','savings','other'}
         cat_map = {}
         for c in categories:
             idx = c.get('index', -1)

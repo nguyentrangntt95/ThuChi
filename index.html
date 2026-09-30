@@ -340,6 +340,7 @@ const CATEGORIES = [
   { id: 'health', name: 'Suc khoe', emoji: '\u{1F48A}', hex: '#22c55e' },
   { id: 'education', name: 'Hoc tap', emoji: '\u{1F4DA}', hex: '#6366f1' },
   { id: 'beauty', name: 'Lam dep', emoji: '\u{1F484}', hex: '#f43f5e' },
+  { id: 'relationship', name: 'Quan he', emoji: '\u{1F91D}', hex: '#84cc16' },
   { id: 'other', name: 'Khac', emoji: '\u{1F4CC}', hex: '#71717a' },
   { id: 'savings', name: 'Tiet kiem', emoji: '\u{1F4B0}', hex: '#14b8a6' },
 ];
@@ -413,7 +414,7 @@ function merchantKey(detail) {
 
 
 // Vietnamese names for display
-const CAT_NAMES = {food:'Ăn uống',transport:'Di chuyển',shopping:'Mua sắm',entertainment:'Giải trí',bills:'Hóa đơn',health:'Sức khỏe',education:'Học tập',beauty:'Làm đẹp',other:'Khác',savings:'Tiết kiệm'};
+const CAT_NAMES = {food:'Ăn uống',transport:'Di chuyển',shopping:'Mua sắm',entertainment:'Giải trí',bills:'Hóa đơn',health:'Sức khỏe',education:'Học tập',beauty:'Làm đẹp',relationship:'Quan hệ',other:'Khác',savings:'Tiết kiệm'};
 CATEGORIES.forEach(c => c.name = CAT_NAMES[c.id]);
 
 // ── Smart Category Learning ──
@@ -452,6 +453,8 @@ const catMemory = {
   // Also check all stored keywords against a detail string
   suggestFromAll(detail) {
     if (!detail) return null;
+    const REL = /\b(quà|qua tang|mừng|cưới|lì xì|li xi|thăm|sinh nhật|\bsn\b|biếu|hiếu|đám|ủng hộ|từ thiện|cho mẹ|cho bố|cho ba|cho cậu|cho cô|cho chị|cho em|cho anh|cho bé|gender reveal)/i;
+    if (REL.test(detail)) return { cat: 'relationship', n: 99, kLen: 99, keyword: 'quan hệ' };
     const lower = detail.toLowerCase().replace(/[^a-zàáảãạăắằẳẵặâấầẩẫậèéẻẽẹêếềểễệìíỉĩịòóỏõọôốồổỗộơớờởỡợùúủũụưứừửữựỳýỷỹỵđ0-9\s]/g, '');
     let best = null;
     for (const [k, v] of Object.entries(this._data)) {
@@ -1630,7 +1633,7 @@ function StreakCard({ expenses }) {
 
 // ── Hạn mức danh mục (theo % ngân sách tháng) + phạt Mua sắm / Làm đẹp ──
 // Mặc định lấy từ phân tích 6 tháng T4–T9/2026, tổng 90%, 10% còn lại là dự phòng.
-const DEFAULT_LIMITS = { food: 21, health: 15, shopping: 17.5, other: 11.5, beauty: 10, entertainment: 7.5, bills: 3.5, education: 2.5, transport: 1.5 };
+const DEFAULT_LIMITS = { food: 21, health: 15, shopping: 17.5, relationship: 9, beauty: 10, entertainment: 7.5, bills: 3.5, other: 2.5, education: 2.5, transport: 1.5 };
 const PENALTY_CATS = ['shopping', 'beauty'];
 const PENALTY_START = '2026-10';        // T9 là tháng làm quen, phạt bắt đầu tính từ T10
 // Phạt theo mức độ lố: lố càng sâu so với trần, tỷ lệ nộp càng cao. Không có trần.
@@ -2583,7 +2586,11 @@ function App() {
       setBudgets(budData);
       setProjects(projData || []);
       const st = (settingsData && typeof settingsData === 'object') ? settingsData : {};
-      const limitsNow = st.cat_limits && Object.keys(st.cat_limits).length ? st.cat_limits : DEFAULT_LIMITS;
+      let limitsNow = st.cat_limits && Object.keys(st.cat_limits).length ? { ...st.cat_limits } : DEFAULT_LIMITS;
+      if (limitsNow !== DEFAULT_LIMITS && limitsNow.relationship === undefined) {
+        const o = limitsNow.other || 0;
+        limitsNow.relationship = Math.round(o * 0.8 * 2) / 2; limitsNow.other = Math.round((o - limitsNow.relationship) * 2) / 2;
+      }
       let pen = st.penalties || {};
       setCatLimits(limitsNow);
       setPenalties(pen);
