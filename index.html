@@ -887,22 +887,40 @@ function CategoryChart({ expenses, allExpenses, filterCat, onFilter, dateFrom, d
               <span class="ml-auto text-xs font-semibold text-zinc-700 dark:text-zinc-300 whitespace-nowrap">${d.total > 0 ? fmtShort(d.total) : html`<span class="text-zinc-400 font-normal">chưa tiêu</span>`} ${grandTotal > 0 && d.total > 0 ? html`<span class="text-zinc-400 font-normal">${Math.round(d.total/grandTotal*100)}%</span>` : ''}</span>
             </div>
             ${limits && limits[d.id] >= 0 && (() => {
-              const lim = limits[d.id], r = d.total / lim;
+              const lim = limits[d.id], r = lim > 0 ? d.total / lim : (d.total > 0 ? 2 : 0);
               const col = r > 1 ? '#ef4444' : r >= 0.8 ? '#f59e0b' : '#22c55e';
+              // Nhịp: tháng đang chạy thì đến hôm nay chỉ nên tiêu tỷ lệ ngày đã qua của trần
+              const t = today(), m = dateFrom ? dateFrom.slice(0, 7) : '';
+              let pace = null;
+              if (lim > 0 && r <= 1 && m && t.slice(0, 7) === m) {
+                const day = parseInt(t.slice(8, 10), 10), dim = new Date(parseInt(m.slice(0, 4), 10), parseInt(m.slice(5, 7), 10), 0).getDate();
+                pace = Math.round(lim * day / dim);
+              }
+              const fast = pace !== null && d.total > pace;
               return html`
-                <div key=${d.id + '-lim'} class="flex items-center gap-2" style="margin:-2px 0 3px 18px">
-                  <div class="flex-1 rounded-full" style="height:4px;background:rgba(128,128,128,0.15);overflow:hidden"><div style="height:100%;width:${Math.min(100, r * 100)}%;background:${col};border-radius:9999px"></div></div>
+                <div key=${d.id + '-lim'} class="flex items-center gap-2" style="margin:-2px 0 ${pace !== null ? '0' : '3px'} 18px">
+                  <div class="flex-1 rounded-full" style="height:4px;background:rgba(128,128,128,0.15);overflow:hidden;position:relative">
+                    <div style="height:100%;width:${Math.min(100, r * 100)}%;background:${col};border-radius:9999px"></div>
+                    ${pace !== null && html`<div style="position:absolute;top:-2px;bottom:-2px;left:${Math.min(100, pace / lim * 100)}%;width:2px;background:${fast ? '#ef4444' : '#71717a'};opacity:.8"></div>`}
+                  </div>
                   <span style="font-size:10px;color:${col};white-space:nowrap;min-width:64px;text-align:right">${r > 1 ? 'lố ' + fmtShort(d.total - lim) : 'còn ' + fmtShort(lim - d.total)} / ${fmtShort(lim)}</span>
-                </div>`;
+                </div>
+                ${pace !== null && html`
+                  <p key=${d.id + '-pace'} style="font-size:10px;margin:0 0 3px 18px;color:${fast ? '#ef4444' : '#a1a1aa'};${fast ? 'font-weight:600' : ''}">${fast ? '\u{1F3C3} nhanh hơn nhịp ' + fmtShort(d.total - pace) : 'nhịp: đến hôm nay nên dưới ' + fmtShort(pace)}</p>
+                `}`;
             })()}
           `)}
         </div>
       </div>
-      ${penaltyNote && penaltyNote.items.length > 0 && html`
+      ${penaltyNote && (penaltyNote.items.length > 0 || (penaltyNote.bonuses && penaltyNote.bonuses.length > 0)) && html`
         <div class="mt-3 pt-3 border-t border-zinc-200 dark:border-zinc-700">
-          <p class="text-xs font-semibold" style="color:#ef4444">⚖️ Phạt tháng ${parseInt(penaltyNote.month.slice(5), 10)}</p>
+          ${penaltyNote.items.length > 0 && html`<p class="text-xs font-semibold" style="color:#ef4444">⚖️ Phạt tháng ${parseInt(penaltyNote.month.slice(5), 10)}</p>`}
           ${penaltyNote.items.map(p => html`
             <p key=${p.cat} class="text-xs text-zinc-600 dark:text-zinc-400" style="margin-top:3px">${catMap[p.cat].emoji} ${catMap[p.cat].name} lố ${fmtShort(p.over)} → nộp ${fmtShort(p.fine)} vào Tiết kiệm, hạn mức tháng này còn ${fmtShort(p.newLimit)}</p>
+          `)}
+          ${penaltyNote.bonuses && penaltyNote.bonuses.length > 0 && html`<p class="text-xs font-semibold" style="color:#16a34a;${penaltyNote.items.length ? 'margin-top:6px' : ''}">🎁 Thưởng dưới trần tháng ${parseInt(penaltyNote.month.slice(5), 10)}</p>`}
+          ${(penaltyNote.bonuses || []).map(b => html`
+            <p key=${b.cat + '-b'} class="text-xs text-zinc-600 dark:text-zinc-400" style="margin-top:3px">${catMap[b.cat].emoji} ${catMap[b.cat].name} dư ${fmtShort(b.under)} → trần tháng này +${fmtShort(b.bonus)}, thành ${fmtShort(b.newLimit)}</p>
           `)}
         </div>
       `}
@@ -1631,19 +1649,21 @@ const budgetAmountOf = (budgets, m, penalties) => {
 const baseLimitOf = (cat, m, catLimits, budgets, penalties) => catLimits[cat] ? Math.round(budgetAmountOf(budgets, m, penalties) * catLimits[cat] / 100) : 0;
 // Phần lố phải bù ĐỦ: lố tháng trước trừ hết vào tháng này; nếu tháng này không đủ để trừ,
 // phần còn dư dồn tiếp sang tháng kế (tối đa lần ngược 12 tháng).
+const BONUS_RATE = 0.5;                 // dưới trần thì 50% phần dư cộng vào trần tháng sau
+const bonusInto = (cat, m, penalties) => { const rec = penalties && penalties[prevMonthOf(m)] && penalties[prevMonthOf(m)][cat]; return rec && rec.bonus ? rec.bonus : 0; };
 const carryInto = (cat, m, catLimits, penalties, budgets, depth = 0) => {
   const pm = prevMonthOf(m);
   const rec = penalties[pm] && penalties[pm][cat];
   const own = rec && rec.carry ? rec.carry : 0;
   if (depth >= 12 || !Object.keys(penalties).some(k => k < pm)) return own;
-  const leftover = Math.max(0, carryInto(cat, pm, catLimits, penalties, budgets, depth + 1) - baseLimitOf(cat, pm, catLimits, budgets, penalties));
+  const leftover = Math.max(0, carryInto(cat, pm, catLimits, penalties, budgets, depth + 1) - baseLimitOf(cat, pm, catLimits, budgets, penalties) - bonusInto(cat, pm, penalties));
   return own + leftover;
 };
 // Hạn mức thực tế = % × ngân sách tháng − phần lố còn nợ. Có thể về 0.
 const computeLimit = (cat, m, catLimits, penalties, budgets) => {
   const base = baseLimitOf(cat, m, catLimits, budgets, penalties);
   if (!base) return 0;
-  return Math.max(0, base - carryInto(cat, m, catLimits, penalties, budgets));
+  return Math.max(0, base + bonusInto(cat, m, penalties) - carryInto(cat, m, catLimits, penalties, budgets));
 };
 const computeFine = (over, limit, monthBudget) => Math.max(PENALTY_MIN, Math.round(over * penaltyRate(over, limit) / 10000) * 10000);
 
@@ -1676,7 +1696,7 @@ function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month }) {
           <span class="text-sm" style="color:${sum > 100 ? '#ef4444' : mut}">Tổng ${Math.round(sum * 10) / 10}% · Dự phòng ${buffer}%</span>
           <span class="text-sm font-semibold" style="color:${sum > 100 ? '#ef4444' : fg}">${fmtShort(Math.round(monthBudget * Math.max(0, 100 - sum) / 100))}</span>
         </div>
-        <p class="text-xs" style="color:${mut};margin-top:10px;line-height:1.5">⚖️ Mua sắm và Làm đẹp có phạt từ T${parseInt(PENALTY_START.slice(5), 10)}/${PENALTY_START.slice(0, 4)}: vượt hạn mức thì TOÀN BỘ phần lố bị trừ vào hạn mức tháng sau (trừ chưa hết thì dồn tiếp), và nộp thêm vào Tiết kiệm theo bậc: lố ≤10% trần nộp 20%, ≤30% nộp 30%, ≤50% nộp 40%, sâu hơn nộp 50% phần lố (tối thiểu ${fmtShort(PENALTY_MIN)}, không có trần). App tự ghi khoản đó ngày đầu tháng.</p>
+        <p class="text-xs" style="color:${mut};margin-top:10px;line-height:1.5">⚖️ Mua sắm và Làm đẹp có phạt từ T${parseInt(PENALTY_START.slice(5), 10)}/${PENALTY_START.slice(0, 4)}: dưới trần thì ${BONUS_RATE * 100}% phần dư được cộng vào trần tháng sau (nhịn vài tháng để dồn cho đợt sale); vượt hạn mức thì TOÀN BỘ phần lố bị trừ vào hạn mức tháng sau (trừ chưa hết thì dồn tiếp), và nộp thêm vào Tiết kiệm theo bậc: lố ≤10% trần nộp 20%, ≤30% nộp 30%, ≤50% nộp 40%, sâu hơn nộp 50% phần lố (tối thiểu ${fmtShort(PENALTY_MIN)}, không có trần). App tự ghi khoản đó ngày đầu tháng.</p>
         <button onClick=${() => { if (sum <= 100) onSave(Object.fromEntries(Object.entries(vals).map(([k, v]) => [k, parseFloat(v) || 0]))); }}
           disabled=${sum > 100}
           class="w-full mt-4 py-3 rounded-xl bg-emerald-500 text-white font-medium disabled:opacity-40">Lưu hạn mức</button>
@@ -2495,6 +2515,9 @@ function App() {
             rec[cat] = { over, fine, carry: over, expense_id: id };
             newExps.push({ id, date: curM + '-01', category: SAVINGS_CAT, amount: fine, project_id: '',
               detail: 'Phạt vượt ' + catMap[cat].name + ' T' + parseInt(pm.slice(5), 10) + ' (lố ' + fmtShort(over) + ')' });
+          } else if (lim > 0 && over < 0) {
+            // Dưới trần: thưởng 50% phần dư vào trần tháng này (dồn được nhiều tháng để mua đợt sale)
+            rec[cat] = { under: -over, bonus: Math.round(-over * BONUS_RATE / 1000) * 1000 };
           }
         }
         pen = { ...pen, [pm]: rec };
@@ -2571,7 +2594,8 @@ function App() {
     const rec = penalties[pm];
     if (!rec) return null;
     const items = PENALTY_CATS.filter(c => rec[c] && rec[c].over > 0).map(c => ({ cat: c, over: rec[c].over, fine: rec[c].fine, newLimit: limitsForRange[c] || 0 }));
-    return { month: pm, items };
+    const bonuses = PENALTY_CATS.filter(c => rec[c] && rec[c].bonus > 0).map(c => ({ cat: c, under: rec[c].under, bonus: rec[c].bonus, newLimit: limitsForRange[c] || 0 }));
+    return { month: pm, items, bonuses };
   }, [limitsForRange, penalties, dateFrom]);
   const limitCheck = useCallback((cat, date, amount, excludeId) => {
     const m = (date || today()).slice(0, 7);
