@@ -241,6 +241,7 @@ const apiCall = async (path, opts) => {
 };
 const fmt = (n) => new Intl.NumberFormat('vi-VN').format(n);
 const fmtShort = (n) => {
+  if (Math.abs(n) >= 1e9) return (n / 1e9).toFixed(2).replace(/\.?0+$/, '').replace('.', ',') + ' tỷ';
   const sign = n < 0 ? '-' : '';
   const a = Math.abs(n);
   if (a >= 1000000) { const m = a / 1000000; return sign + (m % 1 === 0 ? m.toFixed(0) : m.toFixed(1).replace(/\.0$/, '')) + 'M'; }
@@ -1891,7 +1892,7 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
     // Lý do dài hạn cho khoản tuỳ ý: con cái + chi phí cơ hội nếu đem gửi 8%
     if ((!essential || cat === 'food') && amt >= 100000) {
       if (!essential && level !== 'ok') reasons.push(pick(UPCOMING, seed));
-      snap.push('Cùng ' + fmtShort(amt) + ' đem gửi tiết kiệm 8% lãi kép: 6 tháng sau thành ' + fmtShort(grow6m(amt)) + ', 1 năm ' + fmtShort(grow1y(amt)) + ', 5 năm (con vào lớp 1) ' + fmtShort(grow5y(amt)));
+      snap.push('Cùng ' + fmtShort(amt) + ' đem gửi tiết kiệm 8% lãi kép: 6 tháng sau thành ' + fmt(grow6m(amt)) + 'đ, 1 năm ' + fmt(grow1y(amt)) + 'đ, 5 năm (con vào lớp 1) ' + fmt(grow5y(amt)) + 'đ');
     }
     // Bối cảnh lớn: mục tiêu tài sản, quỹ khẩn cấp, thẻ tín dụng, em bé
     if (finance && !essential && amt >= 100000) {
