@@ -1667,6 +1667,92 @@ const computeLimit = (cat, m, catLimits, penalties, budgets) => {
 };
 const computeFine = (over, limit, monthBudget) => Math.max(PENALTY_MIN, Math.round(over * penaltyRate(over, limit) / 10000) * 10000);
 
+// ── "Thử tiêu": nhập số + danh mục, app trả lời Nên / Cân nhắc / Không nên, một chạm thành khoản thật ──
+function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onClose }) {
+  const [cat, setCat] = useState('shopping');
+  const [amount, setAmount] = useState('');
+  const amt = evalAmount(amount) || 0;
+  const bg = dark ? '#1e293b' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#334155' : '#e4e4e7';
+  const verdict = useMemo(() => {
+    if (amt <= 0) return null;
+    const li = limitCheck ? limitCheck(cat, today(), amt, null) : null;
+    const reasons = [];
+    let level = 'ok';
+    const t = today(), day = parseInt(t.slice(8, 10), 10);
+    const dim = new Date(parseInt(t.slice(0, 4), 10), parseInt(t.slice(5, 7), 10), 0).getDate();
+    const daysLeft = dim - day;
+    if (li) {
+      const after = li.spent + li.amount;
+      const over = after - li.limit;
+      if (over > 0) {
+        level = 'no';
+        reasons.push(catMap[cat].name + ' sẽ lên ' + fmtShort(after) + ', vượt trần ' + fmtShort(li.limit) + ' tới ' + fmtShort(over));
+        if (li.penalized) reasons.push('Giá thật: nộp phạt ~' + fmtShort(computeFine(over, li.limit, monthBudget)) + ' và trần tháng sau mất ' + fmtShort(over));
+      } else {
+        const pace = Math.round(li.limit * day / dim);
+        if (after > li.limit * 0.8 && daysLeft >= 7) {
+          level = 'wait';
+          reasons.push('Dùng hết ' + Math.round(after / li.limit * 100) + '% trần ' + catMap[cat].name + ' khi tháng còn ' + daysLeft + ' ngày');
+        } else if (after > pace * 1.3 && daysLeft >= 7) {
+          level = 'wait';
+          reasons.push('Nhanh hơn nhịp: đến hôm nay nên dưới ' + fmtShort(pace) + ', sẽ thành ' + fmtShort(after));
+        } else {
+          reasons.push('Còn ' + fmtShort(li.limit - after) + ' trong trần ' + catMap[cat].name + ' ' + fmtShort(li.limit));
+        }
+      }
+    }
+    if (dailyInfo) {
+      const monthLeft = dailyInfo.monthBudget - dailyInfo.monthSpent;
+      if (amt > monthLeft) { level = 'no'; reasons.push('Vượt cả ngân sách tháng: chỉ còn ' + fmtShort(Math.max(0, monthLeft))); }
+      else if (dailyInfo.dailyRemain > 0 && amt > dailyInfo.dailyRemain * 3) {
+        if (level === 'ok') level = 'wait';
+        reasons.push('Bằng ' + Math.round(amt / dailyInfo.dailyRemain) + ' ngày tiêu (còn ' + fmtShort(Math.round(dailyInfo.dailyRemain)) + '/ngày tuần này)');
+      } else if (dailyInfo.dailyRemain > 0) {
+        reasons.push('Còn ' + fmtShort(Math.round(dailyInfo.dailyRemain)) + '/ngày cho hết tuần');
+      }
+    }
+    if (level === 'ok' && PENALTY_CATS.includes(cat) && amt >= 500000) reasons.push('Trên 500k: nên chờ 24 giờ rồi quyết');
+    return { level, reasons };
+  }, [amt, cat, limitCheck, dailyInfo, monthBudget]);
+  const V = { ok: { label: 'NÊN', color: '#16a34a', icon: '✅' }, wait: { label: 'CÂN NHẮC', color: '#d97706', icon: '⏳' }, no: { label: 'KHÔNG NÊN', color: '#dc2626', icon: '\u{1F6D1}' } };
+  const v = verdict ? V[verdict.level] : null;
+  return html`
+    <div class="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center fade-in" style="background:rgba(0,0,0,0.55)" onClick=${onClose}>
+      <div class="w-full slide-up" style="max-width:420px;background:${bg};border-radius:20px 20px 0 0;padding:20px 16px 24px" onClick=${e => e.stopPropagation()}>
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-bold" style="color:${fg};font-size:16px">\u{1F914} Thử tiêu</h3>
+          <button onClick=${onClose} style="color:${mut};font-size:20px;line-height:1">×</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px">
+          ${CATEGORIES.filter(c => c.id !== SAVINGS_CAT).map(c => html`
+            <button key=${c.id} onClick=${() => setCat(c.id)}
+              style="padding:8px 2px;border-radius:10px;border:1px solid ${cat === c.id ? c.hex : bd};background:${cat === c.id ? c.hex + '22' : 'transparent'};color:${fg};text-align:center">
+              <div style="font-size:18px;line-height:1.2">${c.emoji}</div>
+              <div style="font-size:10px;margin-top:2px;${cat === c.id ? 'font-weight:700' : ''}">${c.name}</div>
+            </button>
+          `)}
+        </div>
+        <input type="text" inputMode="decimal" autofocus value=${amount} onInput=${e => setAmount(e.target.value)} placeholder="Định tiêu bao nhiêu?"
+          style="width:100%;margin-top:12px;padding:12px 14px;border-radius:12px;border:1px solid ${bd};background:${dark ? '#0f172a' : '#fafafa'};color:${fg};font-size:20px;font-weight:700;text-align:center" />
+        ${amt > 0 && html`<p class="text-xs" style="color:${mut};text-align:center;margin-top:4px">= ${fmt(amt)}đ</p>`}
+        ${v && html`
+          <div class="fade-in" style="margin-top:14px;border-radius:14px;padding:14px;background:${v.color}18;border:1px solid ${v.color}55">
+            <p style="font-size:22px;font-weight:800;color:${v.color};text-align:center">${v.icon} ${v.label}</p>
+            <div style="margin-top:8px" class="space-y-1">
+              ${verdict.reasons.map((r, i) => html`<p key=${i} class="text-sm" style="color:${fg}">• ${r}</p>`)}
+            </div>
+          </div>
+        `}
+        <div class="flex gap-3 mt-4">
+          <button onClick=${onClose} class="flex-1 py-3 rounded-xl font-medium" style="border:1px solid ${bd};color:${fg}">${v && v !== V.ok ? '\u{1F6E1}️ Không tiêu' : 'Đóng'}</button>
+          <button onClick=${() => amt > 0 && onSpend(cat, amt)} disabled=${amt <= 0}
+            class="flex-1 py-3 rounded-xl font-medium text-white disabled:opacity-40" style="background:${v ? v.color : '#10b981'}">${v && v.level === 'no' ? 'Vẫn tiêu (ghi khoản)' : 'Tiêu → thêm khoản'}</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month }) {
   const [vals, setVals] = useState(() => Object.fromEntries(CATEGORIES.filter(c => c.id !== SAVINGS_CAT).map(c => [c.id, catLimits[c.id] || 0])));
   const sum = Object.values(vals).reduce((s, v) => s + (parseFloat(v) || 0), 0);
@@ -1949,7 +2035,7 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
   // Smart category suggestion when detail changes
   const handleDetailChange = (val) => {
     setDetail(val);
-    if (!expense && val.length >= 2) {
+    if ((!expense || expense._prefill) && val.length >= 2) {
       const suggestion = catMemory.suggestFromAll(val);
       if (suggestion) {
         setCatSuggestion(suggestion);
@@ -2250,7 +2336,7 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
           <button onClick=${handleSave}
             class="flex-1 py-3 rounded-xl bg-emerald-500 text-white font-medium hover:bg-emerald-600 active:bg-emerald-700 transition-colors text-base disabled:opacity-40"
             disabled=${!amount || parseInt(amount) <= 0}>
-            ${expense ? 'Lưu' : 'Thêm'}
+            ${expense && !expense._prefill ? 'Lưu' : 'Thêm'}
           </button>
         </div>
       </div>
@@ -2424,6 +2510,7 @@ function App() {
   const [catLimits, setCatLimits] = useState(DEFAULT_LIMITS);
   const [penalties, setPenalties] = useState({});
   const [showLimits, setShowLimits] = useState(false);
+  const [showTry, setShowTry] = useState(false);
   const [filterCat, setFilterCat] = useState('all');
   const [filterProject, setFilterProject] = useState('');
   const [showQR, setShowQR] = useState(false);
@@ -3041,6 +3128,11 @@ function App() {
       `}
 
       <div class="fixed bottom-6 left-0 right-0 flex justify-center gap-3 z-30">
+        <button onClick=${() => setShowTry(true)}
+          class="px-4 py-3 rounded-full font-medium transition-all active:scale-95 flex items-center gap-1.5"
+          style="background:${dark ? '#1e293b' : '#fff'};color:#d97706;border:1.5px solid #f59e0b;box-shadow:0 4px 14px rgba(245,158,11,0.25)">
+          \u{1F914} Thử tiêu
+        </button>
         <button onClick=${() => setModal('new')}
           class="px-5 py-3 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white font-medium shadow-emerald-500/25 hover:shadow-emerald-500/40 transition-all active:scale-95 flex items-center gap-2">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -3049,6 +3141,9 @@ function App() {
       </div>
 
       ${showQR && html`<${QRModal} onClose=${() => setShowQR(false)} />`}
+      ${showTry && html`<${TrySpendModal} dark=${dark} limitCheck=${limitCheck} dailyInfo=${dailyInfo} monthBudget=${budgetAmountOf(budgets, today().slice(0, 7), penalties)}
+        onClose=${() => setShowTry(false)}
+        onSpend=${(cat, amt) => { setShowTry(false); setModal({ _prefill: true, date: today(), category: cat, amount: amt, detail: '' }); }} />`}
       ${showProjects && html`
         <div class="fixed inset-0 z-50 flex items-end sm:items-center justify-center fade-in" onClick=${() => setShowProjects(false)}>
           <div class="absolute inset-0 bg-black/40" />
@@ -3066,7 +3161,7 @@ function App() {
       ${modal && html`
         <${ExpenseForm}
           expense=${modal === 'new' ? null : modal}
-          onSave=${modal === 'new' ? addExpense : updateExpense}
+          onSave=${(modal === 'new' || (modal && modal._prefill)) ? addExpense : updateExpense}
           onSaveBulk=${addBulkExpenses}
           onClose=${() => setModal(null)}
           allExpenses=${expenses}
