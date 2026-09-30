@@ -3270,6 +3270,7 @@ function App() {
                     { label: 'QR Code', icon: '\u{1F4F1}', fn: () => { setShowQR(true); setShowSettings(false); } },
                     { label: 'Projects' + (projects.length > 0 ? ' (' + projects.length + ')' : ''), icon: '\u{1F4C1}', fn: () => { setShowProjects(true); setShowSettings(false); } },
                     { label: 'Xuất CSV', icon: '\u{1F4E5}', fn: () => { exportCSV(); setShowSettings(false); } },
+                    { label: 'Sao chép token (Sheet sync)', icon: '\u{1F511}', fn: async () => { try { await navigator.clipboard.writeText(getToken()); alert('Đã sao chép token. Dán vào Apps Script của sheet.'); } catch (e) { prompt('Copy token này:', getToken()); } setShowSettings(false); } },
                   ].map((item, i) => html`
                     <button key=${i} onClick=${item.fn}
                       style="display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:none;border-radius:8px;font-size:14px;text-align:left;cursor:pointer;background:transparent;color:${dark ? '#e2e8f0' : '#3f3f46'}">

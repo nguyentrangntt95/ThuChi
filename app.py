@@ -934,12 +934,21 @@ def save_settings():
     user_code = get_user_code()
     conn = get_db()
     cur = conn.cursor()
-    # Shallow merge so one client saving cat_limits does not wipe penalties saved by another
+    # Merge one level deep: {"finance": {"savings": 1}} only touches finance.savings,
+    # so the Sheet sync (partial finance) does not wipe fields Trang typed in the app.
+    cur.execute("SELECT data FROM user_settings WHERE user_code=%s", (user_code,))
+    row = cur.fetchone()
+    merged = dict(row["data"]) if row and row["data"] else {}
+    for k, v in data.items():
+        if isinstance(v, dict) and isinstance(merged.get(k), dict):
+            merged[k] = {**merged[k], **v}
+        else:
+            merged[k] = v
     cur.execute(
         """INSERT INTO user_settings (user_code, data, updated_at) VALUES (%s, %s::jsonb, NOW())
-           ON CONFLICT (user_code) DO UPDATE SET data = user_settings.data || EXCLUDED.data, updated_at = NOW()
+           ON CONFLICT (user_code) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()
            RETURNING data""",
-        (user_code, json.dumps(data))
+        (user_code, json.dumps(merged))
     )
     row = cur.fetchone()
     conn.commit()
