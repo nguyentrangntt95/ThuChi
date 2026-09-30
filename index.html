@@ -1720,6 +1720,70 @@ const WAIT_TIPS_BIG = [     // ≥ 1M
   'Nói với một người: "tao định mua X giá Y". Phải nói ra được thì mới mua.',
 ];
 const waitTipsFor = (amt) => amt < 200000 ? WAIT_TIPS_SMALL : amt < 1000000 ? WAIT_TIPS_MID : WAIT_TIPS_BIG;
+
+// Mỗi danh mục một giọng: ưu tiên trong đời sống khác nhau thì cách khích lệ khác nhau.
+// ok = câu nói khi nên tiêu · warn = khi nên chờ / không nên · tips = gợi ý riêng · quotes = câu nhắc riêng
+const CAT_VOICE = {
+  health: {
+    ok:   ['Sức khoẻ là khoản không bao giờ nên cắt. Tiêu đi, không phải nghĩ.', 'Đây là đầu tư, không phải chi tiêu. Cứ đi khám, cứ mua thuốc.', 'Chăm mình lúc này là chăm cả những người đang cần mình khoẻ.'],
+    warn: ['Vẫn nên tiêu nếu cần cho sức khoẻ. Chỉ hỏi: có chỗ nào tin được mà rẻ hơn không.', 'Sức khoẻ trên hết. Hết trần thì lấy từ dự phòng, đừng bỏ khám.'],
+    tips: ['Kiểm tra bảo hiểm y tế hoặc bảo hiểm công ty có chi trả phần này không.', 'Hỏi bác sĩ có thuốc cùng hoạt chất giá tốt hơn không.'],
+    quotes: ['Không có gì đắt bằng một cơ thể mệt.', 'Khoẻ là nền, mọi thứ khác xây trên đó.', 'Tiền khám hôm nay rẻ hơn tiền chữa ngày mai.'],
+  },
+  food: {
+    ok:   ['Ăn là cần. Ăn ngon một chút cũng được, miễn là ăn thật, không phải ăn cho vui tay.', 'Bữa này trong nhịp. Ăn cho tử tế.', 'Đồ ăn là nhiên liệu, cứ nạp.'],
+    warn: ['Ăn thì vẫn phải ăn. Chỉ là hôm nay chọn bữa giản dị hơn: cơm nhà, quán quen, không ship.', 'Không nhịn ăn. Đổi món rẻ hơn, hoặc nấu, là đủ.', 'Ăn uống đang hơi nhanh so với tháng. Vài bữa cơm nhà là cân lại được.'],
+    tips: ['Đi siêu thị với danh sách, đừng đi lúc đói.', 'Một tuần 2 bữa nấu nhà là tiết kiệm được cỡ một bữa nhà hàng.', 'Ship đồ ăn: tiền ship + phí thường bằng 30% bữa. Ra quán hoặc nấu.'],
+    quotes: ['Bữa cơm ngon nhất thường là bữa có người ngồi cùng, không phải bữa đắt nhất.', 'Ăn đủ, không ăn thừa. Cả tiền và đồ ăn.'],
+  },
+  relationship: {
+    ok:   ['Cho người mình thương là khoản đáng nhất trong tháng. Cứ tặng.', 'Tình cảm được vun là thứ không lỗ. Đây là tiền tiêu đúng chỗ.', 'Quà đúng lúc hơn quà đắt. Khoản này ổn.'],
+    warn: ['Tình cảm không đo bằng giá tiền. Món nhỏ hơn nhưng có tâm vẫn đủ.', 'Người thân không cần bạn tặng vượt sức. Họ cần bạn ổn.', 'Hiếu hỉ là nghĩa, nhưng nghĩa cũng có nhịp. Chọn mức vừa lòng mình.'],
+    tips: ['Tự làm hoặc tự chọn kỹ: một món 300k đúng ý hơn món 1M mua vội.', 'Mừng cưới, lì xì theo mức mình đặt sẵn, không theo mức người khác.', 'Dành thời gian đi cùng họ đôi khi đáng hơn món quà.'],
+    quotes: ['Người ta nhớ mình có ở đó không, chứ không nhớ mình đưa bao nhiêu.', 'Yêu thương không cần hoá đơn.', 'Cho đi vừa sức là cho đi lâu dài.'],
+  },
+  education: {
+    ok:   ['Học là khoản duy nhất càng tiêu càng có lời. Đầu tư đi.', 'Kiến thức mang được đến hết đời. Khoản này đáng.'],
+    warn: ['Học là tốt, nhưng khoá chưa học xong thì khoá mới chỉ là mua thêm áy náy.', 'Hỏi mình: học để làm gì trong 3 tháng tới. Có câu trả lời thì mua.'],
+    tips: ['Kiểm tra khoá cũ đã học được bao nhiêu %.', 'Tìm bản miễn phí hoặc thư viện trước, thấy hợp thì mua bản đầy đủ.'],
+    quotes: ['Đầu tư vào đầu mình là khoản không ai lấy được.', 'Học một thứ đến cùng hơn học năm thứ nửa chừng.'],
+  },
+  entertainment: {
+    ok:   ['Nghỉ ngơi cũng là việc. Trải nghiệm này trong nhịp, đi đi.', 'Kỷ niệm không mua lại được, tiền thì kiếm lại được. Khoản này ổn.'],
+    warn: ['Vui là cần, nhưng vui mà lo tiền thì không vui. Chọn chuyến nhỏ hơn hoặc dời sang tháng sau.', 'Trải nghiệm đáng hơn đồ, nhưng cũng cần nhịp. Tháng này đã đủ vui chưa.'],
+    tips: ['Cọc phòng, vé máy bay: đặt sớm rẻ hơn 30–40%. Lên kế hoạch thay vì mua gấp.', 'Một chuyến đi trọn vẹn hơn ba chuyến vội.', 'Chuyến này có thể chờ đến khi trần tháng sau dồn thêm không.'],
+    quotes: ['Thứ nhớ lâu là người đi cùng và chuyện xảy ra, không phải sao của khách sạn.', 'Vui thật không cần tốn thật.'],
+  },
+  shopping: {
+    ok:   ['Trong trần, có kế hoạch. Mua cái cần, dùng cho hết.', 'Ổn. Mua rồi thì dùng, đừng để trong túi.'],
+    warn: ['Mua sắm là chỗ tiền hay trôi nhất, và cũng là chỗ bạn kiểm soát được nhất. Chờ một nhịp.', 'Cái này không mua thì ngày mai vẫn y nguyên. Tiền thì không.', 'Bạn không thiếu cái này. Bạn đang thiếu một chút thời gian để hết muốn.'],
+    tips: null, quotes: null,   // dùng bộ chung theo tầm tiền + MINIMAL_QUOTES
+  },
+  beauty: {
+    ok:   ['Chăm da chăm mình là đáng, trong trần thì cứ mua. Dùng hết lọ này rồi lọ khác.', 'Ổn. Đẹp bền là đẹp từ nếp sống, mỹ phẩm chỉ hỗ trợ.'],
+    warn: ['Mỹ phẩm hết hạn trước khi dùng hết là chuyện rất thường. Kiểm tra tủ trước.', 'Da cần ngủ đủ và uống nước hơn cần thêm serum. Chờ đến khi dùng hết cái đang có.', 'Sale là để bạn tiêu, không phải để bạn tiết kiệm. Chờ đến tháng dồn trần.'],
+    tips: ['Đếm số lọ đang mở trong tủ. Trên 5 thì chưa cần thêm.', 'Một routine 3 bước dùng đều hơn 8 bước dùng lúc nhớ.', 'Đợt sale tiếp theo luôn có. Trần tháng sau cộng 50% phần dư nếu tháng này giữ được.'],
+    quotes: ['Đẹp là khi da khoẻ, không phải khi tủ đầy.', 'Tự tin không đựng trong lọ.', 'Người đẹp nhất phòng thường là người thoải mái nhất, không phải người tốn nhất.'],
+  },
+  bills: {
+    ok:   ['Hoá đơn là nghĩa vụ, trả đúng hạn là xong.', 'Trả đi, cho nhẹ đầu.'],
+    warn: ['Hoá đơn thì vẫn phải trả. Xem lại có gói nào đang thừa không: app trả phí không dùng, 4G quá nhiều.'],
+    tips: ['Liệt kê các gói đăng ký hằng tháng, huỷ cái không mở trong 30 ngày.'],
+    quotes: null,
+  },
+  transport: {
+    ok:   ['Đi lại là cần. Đi an toàn là được.'],
+    warn: ['Đi lại vẫn cần, nhưng Grab mỗi ngày cộng lại không nhỏ. Bữa nào tiện thì xe bus, đi bộ.'],
+    tips: ['Gom việc ra ngoài vào một chuyến.'],
+    quotes: null,
+  },
+  other: {
+    ok:   ['Ổn, trong dự phòng.'],
+    warn: ['Khoản "khác" là chỗ dễ trôi nhất vì không ai soi. Ghi rõ nó là gì đã.'],
+    tips: ['Đặt tên cho khoản này. Đặt tên được thì biết có cần không.'],
+    quotes: null,
+  },
+};
 const pick = (arr, seed) => arr[Math.abs(seed) % arr.length];
 
 // ── "Thử tiêu": nhập số + danh mục, app trả lời Nên / Cân nhắc / Không nên, một chạm thành khoản thật ──
@@ -1796,16 +1860,26 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
       }
     }
     const seed = amt + day * 7 + cat.length;
-    const pool = waitTipsFor(amt);
-    const tips = (!essential && level !== 'ok') ? [pick(pool, seed), pick(pool, seed + 3)].filter((t, i, a) => a.indexOf(t) === i) : [];
-    // Khoản lớn so với nhịp ngày: nói rõ phải "nhịn" bao nhiêu ngày để bù
-    if (!essential && dailyInfo && dailyInfo.dailyRemain > 0 && amt >= dailyInfo.dailyRemain * 2) {
+    const voice = CAT_VOICE[cat] || CAT_VOICE.other;
+    const human = pick(level === 'ok' ? voice.ok : voice.warn, seed);
+    // Tips: danh mục có bộ riêng thì dùng riêng; Mua sắm dùng bộ chung theo tầm tiền
+    const catTips = voice.tips;
+    const pool = catTips || waitTipsFor(amt);
+    let tips = [];
+    if (level !== 'ok') {
+      tips = [pick(pool, seed), pick(pool, seed + 3)].filter((t, i, a) => a.indexOf(t) === i);
+      if (cat === 'beauty' && amt >= 1000000) tips.push(pick(WAIT_TIPS_BIG, seed));
+    } else if (!essential && amt >= 1000000) {
+      // Khoản lớn nhưng vẫn "Nên": vẫn nhắc ngủ một đêm, trừ quan hệ và học tập (đã cân nhắc rồi mới mua)
+      if (!['relationship', 'education'].includes(cat)) tips.push(pick(WAIT_TIPS_BIG, seed));
+    }
+    // Khoản tuỳ ý lớn so với nhịp ngày: nói rõ phải "nhịn" bao nhiêu ngày để bù
+    if (!essential && level !== 'ok' && dailyInfo && dailyInfo.dailyRemain > 0 && amt >= dailyInfo.dailyRemain * 2) {
       tips.unshift('Để bù khoản này phải tiêu 0đ trong ' + Math.ceil(amt / dailyInfo.dailyRemain) + ' ngày tới');
     }
-    // Khoản lớn nhưng vẫn "Nên": nhắc quy tắc ngủ một đêm thay vì im lặng
-    if (!essential && level === 'ok' && amt >= 1000000) tips.push(pick(WAIT_TIPS_BIG, seed));
-    const quote = !essential ? pick(MINIMAL_QUOTES, seed) : null;
-    return { level, reasons, snap, tips, quote };
+    const quotePool = voice.quotes || (essential ? null : MINIMAL_QUOTES);
+    const quote = quotePool ? pick(quotePool, seed) : null;
+    return { level, reasons, snap, tips, quote, human };
   }, [amt, cat, limitCheck, dailyInfo, monthBudget]);
   const V = { ok: { label: 'NÊN', color: '#16a34a', icon: '✅' }, wait: { label: 'CÂN NHẮC', color: '#d97706', icon: '⏳' }, no: { label: 'KHÔNG NÊN', color: '#dc2626', icon: '\u{1F6D1}' } };
   const v = verdict ? V[verdict.level] : null;
@@ -1831,7 +1905,8 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
         ${v && html`
           <div class="fade-in" style="margin-top:14px;border-radius:14px;padding:14px;background:${v.color}18;border:1px solid ${v.color}55">
             <p style="font-size:22px;font-weight:800;color:${v.color};text-align:center">${v.icon} ${v.label}</p>
-            <div style="margin-top:8px" class="space-y-1">
+            ${verdict.human && html`<p class="text-sm" style="text-align:center;margin-top:6px;color:${fg};line-height:1.45">${verdict.human}</p>`}
+            <div style="margin-top:10px" class="space-y-1">
               ${verdict.reasons.map((r, i) => html`<p key=${i} class="text-sm" style="color:${fg}">• ${r}</p>`)}
             </div>
             ${verdict.snap.length > 0 && html`
