@@ -1698,14 +1698,28 @@ const MINIMAL_QUOTES = [
   'Kỷ luật hôm nay là tự do của tháng sau.',
   'Cái làm bạn thấy đủ không nằm ở món tiếp theo.',
 ];
-const WAIT_TIPS = [
+// Tips chia theo tầm tiền: khoản nhỏ thì cảnh giác "nhỏ nhưng nhiều", khoản lớn thì bắt ngủ một đêm
+const WAIT_TIPS_SMALL = [   // < 200k
+  'Nhỏ nhưng lặp: 5 lần như này là hết một bữa ăn ngon.',
+  'Khoản dưới 200k là thứ dễ quên nhất và cộng lại nhiều nhất. Ghi vào đã, mua sau.',
+  'Hỏi một câu: mai không có nó thì có sao không.',
+  'Gom lại: cuối tuần mua một lần, đỡ ship đỡ mua thừa.',
+];
+const WAIT_TIPS_MID = [     // 200k – 1M
   'Bỏ vào giỏ, tắt app, 24 giờ sau còn muốn thì mua.',
   'Hỏi 3 câu: có cần không, có sẵn cái tương tự chưa, không mua thì sao.',
   'Chụp màn hình lại. Đa số món chờ đến cuối tuần là hết muốn.',
-  'Chờ tháng sau: dưới trần thì 50% phần dư cộng vào trần, mua không bị phạt.',
-  'Đợi đợt sale thật (11/11, 12/12) thay vì "sale" ngẫu nhiên hôm nay.',
   'Ghi vào danh sách "muốn", cuối tháng xem còn muốn không.',
+  'Đợi đợt sale thật (11/11, 12/12) thay vì "sale" ngẫu nhiên hôm nay.',
 ];
+const WAIT_TIPS_BIG = [     // ≥ 1M
+  'Trên 1 triệu: ngủ một đêm. Sáng mai còn muốn thì đó là muốn thật.',
+  'Chờ tháng sau: dưới trần thì 50% phần dư cộng vào trần, mua không bị phạt.',
+  'Tính ngược: khoản này bằng mấy ngày lương? Mấy ngày đó có đáng không.',
+  'Đọc lại 3 khoản lớn gần nhất cùng danh mục. Cái nào giờ vẫn thấy đáng.',
+  'Nói với một người: "tao định mua X giá Y". Phải nói ra được thì mới mua.',
+];
+const waitTipsFor = (amt) => amt < 200000 ? WAIT_TIPS_SMALL : amt < 1000000 ? WAIT_TIPS_MID : WAIT_TIPS_BIG;
 const pick = (arr, seed) => arr[Math.abs(seed) % arr.length];
 
 // ── "Thử tiêu": nhập số + danh mục, app trả lời Nên / Cân nhắc / Không nên, một chạm thành khoản thật ──
@@ -1782,7 +1796,14 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
       }
     }
     const seed = amt + day * 7 + cat.length;
-    const tips = (!essential && level !== 'ok') ? [pick(WAIT_TIPS, seed), pick(WAIT_TIPS, seed + 3)].filter((t, i, a) => a.indexOf(t) === i) : [];
+    const pool = waitTipsFor(amt);
+    const tips = (!essential && level !== 'ok') ? [pick(pool, seed), pick(pool, seed + 3)].filter((t, i, a) => a.indexOf(t) === i) : [];
+    // Khoản lớn so với nhịp ngày: nói rõ phải "nhịn" bao nhiêu ngày để bù
+    if (!essential && dailyInfo && dailyInfo.dailyRemain > 0 && amt >= dailyInfo.dailyRemain * 2) {
+      tips.unshift('Để bù khoản này phải tiêu 0đ trong ' + Math.ceil(amt / dailyInfo.dailyRemain) + ' ngày tới');
+    }
+    // Khoản lớn nhưng vẫn "Nên": nhắc quy tắc ngủ một đêm thay vì im lặng
+    if (!essential && level === 'ok' && amt >= 1000000) tips.push(pick(WAIT_TIPS_BIG, seed));
     const quote = !essential ? pick(MINIMAL_QUOTES, seed) : null;
     return { level, reasons, snap, tips, quote };
   }, [amt, cat, limitCheck, dailyInfo, monthBudget]);
