@@ -1619,9 +1619,6 @@ function StreakCard({ expenses }) {
   }, [expenses]);
 
   if (!st) return null;
-  const msg = st.cur === 0 ? 'Hôm nay đã tiêu quá ' + fmtShort(STREAK_LIMIT) + ' · mai làm lại nhé'
-    : st.cur === 1 ? 'Bắt đầu chuỗi mới, giữ tiếp nhé'
-    : st.cur >= st.best && st.best > 1 ? 'Kỷ lục mới! Giữ vững nhé' : 'Đang giữ chuỗi, cố lên';
   return html`
     <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
       <div class="flex items-center gap-3">
@@ -1631,8 +1628,8 @@ function StreakCard({ expenses }) {
             <span class="text-lg font-bold text-zinc-800 dark:text-zinc-200">${st.cur} ngày</span>
             <span class="text-xs text-zinc-500 dark:text-zinc-400">không tiêu / dưới ${fmtShort(STREAK_LIMIT)}</span>
           </div>
-          <p class="text-xs text-zinc-400" style="margin-top:1px">${msg} · kỷ lục ${st.best} · tháng này ${st.monthOk}/${st.monthDays} ngày</p>
         </div>
+        ${st.best > 0 && html`<span class="text-xs text-zinc-400 shrink-0">kỷ lục ${st.best}</span>`}
       </div>
       <div style="display:flex;gap:3px;margin-top:8px">
         ${st.strip.map(x => html`
