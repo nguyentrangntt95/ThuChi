@@ -1684,13 +1684,24 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
     const t = today(), day = parseInt(t.slice(8, 10), 10);
     const dim = new Date(parseInt(t.slice(0, 4), 10), parseInt(t.slice(5, 7), 10), 0).getDate();
     const daysLeft = dim - day;
+    // Thiết yếu (ăn, hoá đơn, sức khoẻ, đi lại): không thể "không nên", chỉ nhắc chọn rẻ hơn.
+    // "Không nên" thật sự dành cho khoản tuỳ ý: mua sắm, làm đẹp, giải trí, quan hệ, khác.
+    const essential = ['food', 'bills', 'health', 'transport'].includes(cat);
+    const bigForDay = dailyInfo && dailyInfo.dailyRemain > 0 && amt > dailyInfo.dailyRemain * 3;
     if (li) {
       const after = li.spent + li.amount;
       const over = after - li.limit;
       if (over > 0) {
-        level = 'no';
-        reasons.push(catMap[cat].name + ' sẽ lên ' + fmtShort(after) + ', vượt trần ' + fmtShort(li.limit) + ' tới ' + fmtShort(over));
-        if (li.penalized) reasons.push('Giá thật: nộp phạt ~' + fmtShort(computeFine(over, li.limit, monthBudget)) + ' và trần tháng sau mất ' + fmtShort(over));
+        if (essential) {
+          level = bigForDay ? 'no' : 'wait';
+          reasons.push(li.spent >= li.limit
+            ? catMap[cat].name + ' đã hết trần ' + fmtShort(li.limit) + ' (đang ' + fmtShort(li.spent) + '). Cần thì vẫn tiêu, nhưng chọn rẻ hơn'
+            : catMap[cat].name + ' sẽ lên ' + fmtShort(after) + ', vượt trần ' + fmtShort(li.limit) + ' tới ' + fmtShort(over));
+        } else {
+          level = 'no';
+          reasons.push(catMap[cat].name + ' sẽ lên ' + fmtShort(after) + ', vượt trần ' + fmtShort(li.limit) + ' tới ' + fmtShort(over));
+          if (li.penalized) reasons.push('Giá thật: nộp phạt ~' + fmtShort(computeFine(over, li.limit, monthBudget)) + ' và trần tháng sau mất ' + fmtShort(over));
+        }
       } else {
         const pace = Math.round(li.limit * day / dim);
         if (after > li.limit * 0.8 && daysLeft >= 7) {
@@ -1706,8 +1717,11 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
     }
     if (dailyInfo) {
       const monthLeft = dailyInfo.monthBudget - dailyInfo.monthSpent;
-      if (amt > monthLeft) { level = 'no'; reasons.push('Vượt cả ngân sách tháng: chỉ còn ' + fmtShort(Math.max(0, monthLeft))); }
-      else if (dailyInfo.dailyRemain > 0 && amt > dailyInfo.dailyRemain * 3) {
+      if (amt > monthLeft) {
+        if (!essential || bigForDay) level = 'no'; else if (level === 'ok') level = 'wait';
+        reasons.push(monthLeft <= 0 ? 'Tháng này đã tiêu hết ngân sách ' + fmtShort(dailyInfo.monthBudget) + ', mọi khoản giờ là tiêu lố' : 'Vượt cả ngân sách tháng: chỉ còn ' + fmtShort(monthLeft));
+      }
+      else if (bigForDay) {
         if (level === 'ok') level = 'wait';
         reasons.push('Bằng ' + Math.round(amt / dailyInfo.dailyRemain) + ' ngày tiêu (còn ' + fmtShort(Math.round(dailyInfo.dailyRemain)) + '/ngày tuần này)');
       } else if (dailyInfo.dailyRemain > 0) {
