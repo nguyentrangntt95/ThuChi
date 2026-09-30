@@ -1889,8 +1889,8 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
       tips.unshift('Để bù khoản này phải tiêu 0đ trong ' + Math.ceil(amt / dailyInfo.dailyRemain) + ' ngày tới');
     }
     // Lý do dài hạn cho khoản tuỳ ý: con cái + chi phí cơ hội nếu đem gửi 8%
-    if (!essential && amt >= 100000) {
-      if (level !== 'ok') reasons.push(pick(UPCOMING, seed));
+    if ((!essential || cat === 'food') && amt >= 100000) {
+      if (!essential && level !== 'ok') reasons.push(pick(UPCOMING, seed));
       snap.push('Cùng ' + fmtShort(amt) + ' đem gửi tiết kiệm 8% lãi kép: 6 tháng sau thành ' + fmtShort(grow6m(amt)) + ', 1 năm ' + fmtShort(grow1y(amt)) + ', 5 năm (con vào lớp 1) ' + fmtShort(grow5y(amt)));
     }
     const quotePool = voice.quotes || (essential ? null : MINIMAL_QUOTES);
