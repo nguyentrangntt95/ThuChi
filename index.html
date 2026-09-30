@@ -1681,6 +1681,33 @@ const computeLimit = (cat, m, catLimits, penalties, budgets) => {
 };
 const computeFine = (over, limit, monthBudget) => Math.max(PENALTY_MIN, Math.round(over * penaltyRate(over, limit) / 10000) * 10000);
 
+// ── Lời nhắc lối sống tối giản & giá trị bản thân, dùng trong Thử tiêu ──
+const MINIMAL_QUOTES = [
+  'Mua thứ không cần là trả tiền để cất thêm một thứ không cần.',
+  'Bạn không cần thêm đồ. Bạn cần thêm chỗ trống.',
+  'Người ta không nhìn cái túi, người ta nhìn bạn cầm túi thế nào.',
+  'Ít đồ hơn, ít phải dọn hơn, ít phải nghĩ hơn.',
+  'Giá trị của bạn không nằm trong giỏ hàng.',
+  'Cái mình thật sự muốn thường không bán ở Shopee.',
+  'Mỗi món không mua là một chút tự do mua được.',
+  'Đẹp là khi da khoẻ, không phải khi tủ đầy.',
+  'Tiền không tiêu hôm nay là lựa chọn để dành cho ngày mai.',
+  'Đủ là một con số, không phải một cảm giác. Bạn đã đủ rồi.',
+  'Không ai nhớ bạn mặc gì. Người ta nhớ bạn đối xử với họ thế nào.',
+  'Thứ mua vì buồn thì không chữa được buồn.',
+  'Kỷ luật hôm nay là tự do của tháng sau.',
+  'Cái làm bạn thấy đủ không nằm ở món tiếp theo.',
+];
+const WAIT_TIPS = [
+  'Bỏ vào giỏ, tắt app, 24 giờ sau còn muốn thì mua.',
+  'Hỏi 3 câu: có cần không, có sẵn cái tương tự chưa, không mua thì sao.',
+  'Chụp màn hình lại. Đa số món chờ đến cuối tuần là hết muốn.',
+  'Chờ tháng sau: dưới trần thì 50% phần dư cộng vào trần, mua không bị phạt.',
+  'Đợi đợt sale thật (11/11, 12/12) thay vì "sale" ngẫu nhiên hôm nay.',
+  'Ghi vào danh sách "muốn", cuối tháng xem còn muốn không.',
+];
+const pick = (arr, seed) => arr[Math.abs(seed) % arr.length];
+
 // ── "Thử tiêu": nhập số + danh mục, app trả lời Nên / Cân nhắc / Không nên, một chạm thành khoản thật ──
 function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onClose }) {
   const [cat, setCat] = useState('shopping');
@@ -1740,7 +1767,24 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
       }
     }
     if (level === 'ok' && PENALTY_CATS.includes(cat) && amt >= 500000) reasons.push('Trên 500k: nên chờ 24 giờ rồi quyết');
-    return { level, reasons };
+
+    // Tình hình tài chính lúc này, để quyết định có bối cảnh
+    const snap = [];
+    if (dailyInfo && dailyInfo.monthBudget > 0) {
+      const pct = Math.round(dailyInfo.monthSpent / dailyInfo.monthBudget * 100);
+      const dayPct = Math.round(day / dim * 100);
+      snap.push('Tháng này đã tiêu ' + fmtShort(dailyInfo.monthSpent) + ' / ' + fmtShort(dailyInfo.monthBudget) + ' (' + pct + '%), thời gian trôi ' + dayPct + '%');
+      if (li && li.limit > 0) snap.push(catMap[cat].name + ' đã dùng ' + Math.round(li.spent / li.limit * 100) + '% trần, còn ' + daysLeft + ' ngày');
+      if (dailyInfo.income > 0) {
+        const hourly = dailyInfo.income / 176; // 22 ngày × 8 giờ
+        const hours = amt / hourly;
+        snap.push('Khoản này bằng ' + (hours >= 8 ? (hours / 8).toFixed(1) + ' ngày' : Math.max(1, Math.round(hours)) + ' giờ') + ' làm việc của bạn');
+      }
+    }
+    const seed = amt + day * 7 + cat.length;
+    const tips = (!essential && level !== 'ok') ? [pick(WAIT_TIPS, seed), pick(WAIT_TIPS, seed + 3)].filter((t, i, a) => a.indexOf(t) === i) : [];
+    const quote = !essential ? pick(MINIMAL_QUOTES, seed) : null;
+    return { level, reasons, snap, tips, quote };
   }, [amt, cat, limitCheck, dailyInfo, monthBudget]);
   const V = { ok: { label: 'NÊN', color: '#16a34a', icon: '✅' }, wait: { label: 'CÂN NHẮC', color: '#d97706', icon: '⏳' }, no: { label: 'KHÔNG NÊN', color: '#dc2626', icon: '\u{1F6D1}' } };
   const v = verdict ? V[verdict.level] : null;
@@ -1769,6 +1813,19 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
             <div style="margin-top:8px" class="space-y-1">
               ${verdict.reasons.map((r, i) => html`<p key=${i} class="text-sm" style="color:${fg}">• ${r}</p>`)}
             </div>
+            ${verdict.snap.length > 0 && html`
+              <div style="margin-top:10px;padding-top:8px;border-top:1px dashed ${v.color}55">
+                <p class="text-xs font-semibold" style="color:${mut};margin-bottom:3px">\u{1F4CB} Tình hình lúc này</p>
+                ${verdict.snap.map((r, i) => html`<p key=${'s' + i} class="text-xs" style="color:${fg}">${r}</p>`)}
+              </div>
+            `}
+            ${verdict.tips.length > 0 && html`
+              <div style="margin-top:10px;padding-top:8px;border-top:1px dashed ${v.color}55">
+                <p class="text-xs font-semibold" style="color:${mut};margin-bottom:3px">⏱️ Thử chờ</p>
+                ${verdict.tips.map((r, i) => html`<p key=${'t' + i} class="text-xs" style="color:${fg}">• ${r}</p>`)}
+              </div>
+            `}
+            ${verdict.quote && html`<p class="text-xs" style="margin-top:12px;text-align:center;font-style:italic;color:${mut}">“${verdict.quote}”</p>`}
           </div>
         `}
         <div class="flex gap-3 mt-4">
