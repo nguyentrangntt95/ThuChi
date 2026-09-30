@@ -995,11 +995,17 @@ function MonthlyComparisonChart({ expenses, budgets, onFilter }) {
     return months.map(m => {
       const b = budgets[m];
       const budgetAmt = !b ? 0 : typeof b === 'number' ? b : (b.amount || 0);
-      return { month: m, total: byMonth[m] || 0, budget: budgetAmt };
+      const income = (b && typeof b === 'object' && b.income) || 0;
+      return { month: m, total: byMonth[m] || 0, budget: budgetAmt, income };
     });
   }, [expenses, budgets]);
 
   if (data.length < 2) return null;
+  // Trung binh cac thang dang hien: thu nhap chi tinh thang co nhap luong
+  const incMonths = data.filter(d => d.income > 0);
+  const avgIncome = incMonths.length ? Math.round(incMonths.reduce((s, d) => s + d.income, 0) / incMonths.length) : 0;
+  const avgSpend = Math.round(data.reduce((s, d) => s + d.total, 0) / data.length);
+  const avgSavePct = avgIncome > 0 ? Math.round((1 - avgSpend / avgIncome) * 100) : null;
   const max = Math.max(...data.map(d => Math.max(d.total, d.budget)));
   const W = 300, H = 140, pad = 25, barW = Math.min(30, (W - pad) / data.length - 8);
 
@@ -1037,6 +1043,11 @@ function MonthlyComparisonChart({ expenses, budgets, onFilter }) {
         <span class="flex items-center gap-1 text-xs text-zinc-400"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:#10b981"></span> Chi tiêu</span>
         <span class="flex items-center gap-1 text-xs text-zinc-400"><span style="display:inline-block;width:12px;border-top:2px dashed #f59e0b"></span> Ngân sách</span>
       </div>
+      <p class="text-xs text-zinc-400" style="text-align:center;margin-top:6px">
+        TB ${data.length} tháng: thu nhập <span class="font-semibold text-zinc-600 dark:text-zinc-300">${avgIncome > 0 ? fmtShort(avgIncome) : '—'}</span>
+        · chi tiêu <span class="font-semibold" style="color:${avgIncome > 0 && avgSpend > avgIncome ? '#ef4444' : '#10b981'}">${fmtShort(avgSpend)}</span>
+        ${avgSavePct !== null ? html`· <span style="color:${avgSavePct < 0 ? '#ef4444' : '#10b981'}">${avgSavePct < 0 ? 'tiêu lố ' + (-avgSavePct) + '%' : 'giữ lại ' + avgSavePct + '%'}</span>` : ''}
+      </p>
     </div>
   `;
 }
