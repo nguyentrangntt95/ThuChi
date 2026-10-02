@@ -1663,19 +1663,28 @@ const baseLimitOf = (cat, m, catLimits, budgets, penalties) => catLimits[cat] ? 
 // phần còn dư dồn tiếp sang tháng kế (tối đa lần ngược 12 tháng).
 const BONUS_RATE = 0.5;                 // dưới trần thì 50% phần dư cộng vào trần tháng sau
 const bonusInto = (cat, m, penalties) => { const rec = penalties && penalties[prevMonthOf(m)] && penalties[prevMonthOf(m)][cat]; return rec && rec.bonus ? rec.bonus : 0; };
-const carryInto = (cat, m, catLimits, penalties, budgets, depth = 0) => {
+// ── Đổi điểm check-in lấy quyền lợi thật. Mọi lần đổi ghi vào user_settings.rewards.log ──
+const REWARD_QUOTA = { pts: 1000, amount: 200000 };   // +200k trần Mua sắm hoặc Làm đẹp tháng này
+const REWARD_PATCH = { pts: 300 };                     // vá 1 ngày quên check-in để nối lại chuỗi
+const REWARD_FINE = { pts: 500, pct: 10, maxPct: 30 }; // giảm 10% tiền phạt tháng trước, tối đa 30%
+const rewardLog = (rewards) => (rewards && Array.isArray(rewards.log)) ? rewards.log : [];
+const quotaInto = (cat, m, rewards) => rewardLog(rewards).filter(r => r.type === 'quota' && r.cat === cat && r.month === m).reduce((s, r) => s + (r.amount || 0), 0);
+const pointsEarned = (checkins) => checkins.reduce((s, c) => s + (c.points || 0), 0);
+const pointsSpent = (rewards) => rewardLog(rewards).reduce((s, r) => s + (r.pts || 0), 0);
+const pointsBalance = (checkins, rewards) => pointsEarned(checkins) - pointsSpent(rewards);
+const carryInto = (cat, m, catLimits, penalties, budgets, rewards, depth = 0) => {
   const pm = prevMonthOf(m);
   const rec = penalties[pm] && penalties[pm][cat];
   const own = rec && rec.carry ? rec.carry : 0;
   if (depth >= 12 || !Object.keys(penalties).some(k => k < pm)) return own;
-  const leftover = Math.max(0, carryInto(cat, pm, catLimits, penalties, budgets, depth + 1) - baseLimitOf(cat, pm, catLimits, budgets, penalties) - bonusInto(cat, pm, penalties));
+  const leftover = Math.max(0, carryInto(cat, pm, catLimits, penalties, budgets, rewards, depth + 1) - baseLimitOf(cat, pm, catLimits, budgets, penalties) - bonusInto(cat, pm, penalties) - quotaInto(cat, pm, rewards));
   return own + leftover;
 };
-// Hạn mức thực tế = % × ngân sách tháng − phần lố còn nợ. Có thể về 0.
-const computeLimit = (cat, m, catLimits, penalties, budgets) => {
+// Hạn mức thực tế = % × ngân sách tháng + thưởng dưới trần + quota đổi bằng điểm − phần lố còn nợ. Có thể về 0.
+const computeLimit = (cat, m, catLimits, penalties, budgets, rewards) => {
   const base = baseLimitOf(cat, m, catLimits, budgets, penalties);
   if (!base) return 0;
-  return Math.max(0, base + bonusInto(cat, m, penalties) - carryInto(cat, m, catLimits, penalties, budgets));
+  return Math.max(0, base + bonusInto(cat, m, penalties) + quotaInto(cat, m, rewards) - carryInto(cat, m, catLimits, penalties, budgets, rewards));
 };
 const computeFine = (over, limit, monthBudget) => Math.max(PENALTY_MIN, Math.round(over * penaltyRate(over, limit) / 10000) * 10000);
 
@@ -2063,7 +2072,7 @@ function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month }) {
           <span class="text-sm" style="color:${sum > 100 ? '#ef4444' : mut}">Tổng ${Math.round(sum * 10) / 10}% · Dự phòng ${buffer}%</span>
           <span class="text-sm font-semibold" style="color:${sum > 100 ? '#ef4444' : fg}">${fmtShort(Math.round(monthBudget * Math.max(0, 100 - sum) / 100))}</span>
         </div>
-        <p class="text-xs" style="color:${mut};margin-top:10px;line-height:1.5">⚖️ Mua sắm và Làm đẹp có phạt từ T${parseInt(PENALTY_START.slice(5), 10)}/${PENALTY_START.slice(0, 4)}: dưới trần thì ${BONUS_RATE * 100}% phần dư được cộng vào trần tháng sau (nhịn vài tháng để dồn cho đợt sale); vượt hạn mức thì TOÀN BỘ phần lố bị trừ vào hạn mức tháng sau (trừ chưa hết thì dồn tiếp), và nộp thêm vào Tiết kiệm theo bậc: lố ≤10% trần nộp 20%, ≤30% nộp 30%, ≤50% nộp 40%, sâu hơn nộp 50% phần lố (tối thiểu ${fmtShort(PENALTY_MIN)}, không có trần). App tự ghi khoản đó ngày đầu tháng.</p>
+        <p class="text-xs" style="color:${mut};margin-top:10px;line-height:1.5">⚖️ Mua sắm và Làm đẹp có phạt từ T${parseInt(PENALTY_START.slice(5), 10)}/${PENALTY_START.slice(0, 4)}: dưới trần thì ${BONUS_RATE * 100}% phần dư được cộng vào trần tháng sau (nhịn vài tháng để dồn cho đợt sale); vượt hạn mức thì TOÀN BỘ phần lố bị trừ vào hạn mức tháng sau (trừ chưa hết thì dồn tiếp), và nộp thêm vào Tiết kiệm theo bậc: lố ≤10% trần nộp 20%, ≤30% nộp 30%, ≤50% nộp 40%, sâu hơn nộp 50% phần lố (tối thiểu ${fmtShort(PENALTY_MIN)}, không có trần). App tự ghi khoản đó ngày đầu tháng. Điểm ⭐ check-in đổi được: ${fmt(REWARD_QUOTA.pts)} điểm = +${fmtShort(REWARD_QUOTA.amount)} trần Mua sắm/Làm đẹp, ${fmt(REWARD_FINE.pts)} điểm = giảm ${REWARD_FINE.pct}% tiền phạt (bấm vào ⭐ trên đầu trang).</p>
         <button onClick=${() => { if (sum <= 100) onSave(Object.fromEntries(Object.entries(vals).map(([k, v]) => [k, parseFloat(v) || 0]))); }}
           disabled=${sum > 100}
           class="w-full mt-4 py-3 rounded-xl bg-emerald-500 text-white font-medium disabled:opacity-40">Lưu hạn mức</button>
@@ -2105,6 +2114,106 @@ function computeCheckin(checkins, expenses, t) {
   const pts = lines.reduce((s, l) => s + l.pts, 0);
   const total = checkins.reduce((s, c) => s + (c.points || 0), 0) + pts;
   return { streak, lines, pts, total, quote: CHECKIN_QUOTES[seed % CHECKIN_QUOTES.length], milestone: !!CHECKIN_MILESTONES[streak] };
+}
+
+// Chuỗi check-in hiện tại và ngày đứt gần nhất có thể vá
+function checkinStreakInfo(checkins) {
+  const days = new Set(checkins.map(c => c.day));
+  const shift = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  const t = today();
+  let d = days.has(t) ? t : shift(t, -1);
+  let cur = 0;
+  while (days.has(d)) { cur++; d = shift(d, -1); }
+  // d là ngày đứt gần nhất. Chỉ vá được nếu trước đó (trong 60 ngày) từng check-in: nối hai đoạn chuỗi lại.
+  let gap = null, before = 0;
+  if (d < t) {
+    let x = shift(d, -1), hops = 0;
+    while (hops < 60 && !days.has(x)) { x = shift(x, -1); hops++; }
+    if (days.has(x) && hops === 0) { gap = d; while (days.has(x)) { before++; x = shift(x, -1); } }
+    else if (days.has(x)) gap = d; // đứt nhiều ngày: vá từng ngày một, lần này chưa nối được
+  }
+  return { cur, gap, after: gap ? cur + 1 + before : cur };
+}
+
+function RewardsModal({ checkins, rewards, penalties, catLimits, budgets, dark, onRedeem, onClose }) {
+  const bg = dark ? '#1e293b' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#334155' : '#e4e4e7';
+  const card = dark ? '#0f172a' : '#fafafa';
+  const [busy, setBusy] = useState(false);
+  const bal = pointsBalance(checkins, rewards);
+  const m = today().slice(0, 7), pm = prevMonthOf(m);
+  const st = checkinStreakInfo(checkins);
+  const rec = penalties[pm] || {};
+  const fineCats = PENALTY_CATS.filter(c => rec[c] && rec[c].fine > 0);
+  const fineTotal = fineCats.reduce((s, c) => s + rec[c].fine, 0);
+  const fineBase = fineCats.reduce((s, c) => s + (rec[c].fine0 || rec[c].fine), 0);
+  const disc = fineCats.length ? Math.max(...fineCats.map(c => rec[c].disc || 0)) : 0;
+  const fineNext = Math.round(fineBase * (1 - (disc + REWARD_FINE.pct) / 100) / 1000) * 1000;
+  const fineSave = fineTotal - fineNext;
+  const log = rewardLog(rewards).slice().reverse().slice(0, 8);
+  const go = async (type, payload) => { if (busy) return; setBusy(true); try { await onRedeem(type, payload); } finally { setBusy(false); } };
+  const fmtD = (d) => d.slice(8, 10) + '/' + d.slice(5, 7);
+  const btn = (ok) => `padding:7px 12px;border-radius:10px;font-size:13px;font-weight:600;border:none;cursor:${ok ? 'pointer' : 'default'};opacity:${ok ? 1 : 0.4};color:#fff;background:linear-gradient(135deg,#f59e0b,#ec4899)`;
+  const typeLabel = { quota: (r) => '+' + fmtShort(r.amount) + ' trần ' + (catMap[r.cat] ? catMap[r.cat].name : r.cat) + ' T' + parseInt(r.month.slice(5), 10), patch: (r) => 'Vá chuỗi ngày ' + fmtD(r.patched), fine: (r) => 'Giảm ' + r.pct + '% phạt T' + parseInt(r.month.slice(5), 10) + ' (−' + fmtShort(r.amount) + ')' };
+  return html`
+    <div class="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center fade-in" style="background:rgba(0,0,0,0.55)" onClick=${onClose}>
+      <div class="w-full slide-up" style="max-width:420px;background:${bg};border-radius:20px 20px 0 0;padding:20px 16px 24px;max-height:92vh;overflow-y:auto" onClick=${e => e.stopPropagation()}>
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="font-bold" style="color:${fg};font-size:16px">⭐ Đổi điểm thưởng</h3>
+          <button onClick=${onClose} style="color:${mut};font-size:20px;line-height:1">×</button>
+        </div>
+        <div style="display:flex;align-items:baseline;gap:8px;margin-top:6px">
+          <span style="font-size:34px;font-weight:800;color:${fg};line-height:1">${fmt(bal)}</span>
+          <span class="text-sm" style="color:${mut}">điểm còn lại</span>
+        </div>
+        <p class="text-xs" style="color:${mut};margin-top:4px">Đã kiếm ${fmt(pointsEarned(checkins))} · đã đổi ${fmt(pointsSpent(rewards))} · chuỗi check-in ${st.cur} ngày</p>
+
+        <div style="margin-top:14px;padding:12px;border-radius:14px;background:${card};border:1px solid ${bd}">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-semibold" style="color:${fg}">🛍️ Nới trần tháng ${parseInt(m.slice(5), 10)}</span>
+            <span class="text-xs font-semibold" style="color:#b45309">${fmt(REWARD_QUOTA.pts)} điểm</span>
+          </div>
+          <p class="text-xs" style="color:${mut};margin-top:3px">+${fmtShort(REWARD_QUOTA.amount)} vào hạn mức Mua sắm hoặc Làm đẹp tháng này. Tiền thật, nhưng có kiểm soát.</p>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            ${PENALTY_CATS.map(c => { const cur = computeLimit(c, m, catLimits, penalties, budgets, rewards); const ok = bal >= REWARD_QUOTA.pts && !busy; return html`
+              <button key=${c} disabled=${!ok} onClick=${() => go('quota', { cat: c })} style="${btn(ok)};flex:1;text-align:left">
+                <div>${catMap[c].emoji} ${catMap[c].name}</div>
+                <div style="font-size:11px;font-weight:500;opacity:.9">${fmtShort(cur)} → ${fmtShort(cur + REWARD_QUOTA.amount)}</div>
+              </button>`; })}
+          </div>
+        </div>
+
+        <div style="margin-top:10px;padding:12px;border-radius:14px;background:${card};border:1px solid ${bd}">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-semibold" style="color:${fg}">🩹 Vá chuỗi check-in</span>
+            <span class="text-xs font-semibold" style="color:#b45309">${fmt(REWARD_PATCH.pts)} điểm</span>
+          </div>
+          ${st.gap ? html`
+            <p class="text-xs" style="color:${mut};margin-top:3px">Quên mở app ngày ${fmtD(st.gap)}. Vá lại: chuỗi ${st.cur} → <b style="color:${fg}">${st.after} ngày</b>${st.after === st.cur + 1 ? ' (còn ngày đứt khác phía trước, vá tiếp sau)' : ''}.</p>
+            <button disabled=${bal < REWARD_PATCH.pts || busy} onClick=${() => go('patch', { day: st.gap })} style="${btn(bal >= REWARD_PATCH.pts && !busy)};margin-top:8px;width:100%">Vá ngày ${fmtD(st.gap)}</button>
+          ` : html`<p class="text-xs" style="color:${mut};margin-top:3px">Chuỗi đang liền mạch, không có ngày nào cần vá. 🔥</p>`}
+        </div>
+
+        <div style="margin-top:10px;padding:12px;border-radius:14px;background:${card};border:1px solid ${bd}">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-semibold" style="color:${fg}">⚖️ Giảm tiền phạt T${parseInt(pm.slice(5), 10)}</span>
+            <span class="text-xs font-semibold" style="color:#b45309">${fmt(REWARD_FINE.pts)} điểm</span>
+          </div>
+          ${fineCats.length === 0 ? html`<p class="text-xs" style="color:${mut};margin-top:3px">Tháng ${parseInt(pm.slice(5), 10)} không bị phạt. Không có gì để giảm, tuyệt. 🎉</p>`
+          : disc >= REWARD_FINE.maxPct ? html`<p class="text-xs" style="color:${mut};margin-top:3px">Đã giảm tối đa ${REWARD_FINE.maxPct}%: phạt còn ${fmtShort(fineTotal)} (gốc ${fmtShort(fineBase)}). Phần lố vẫn bị trừ vào hạn mức tháng này.</p>`
+          : html`
+            <p class="text-xs" style="color:${mut};margin-top:3px">Phạt hiện ${fmtShort(fineTotal)}${disc ? ' (đã giảm ' + disc + '%)' : ''}. Giảm thêm ${REWARD_FINE.pct}%: còn <b style="color:${fg}">${fmtShort(fineNext)}</b>, tiết kiệm ${fmtShort(fineSave)}. Tối đa ${REWARD_FINE.maxPct}%. App sửa luôn khoản Tiết kiệm đã ghi.</p>
+            <button disabled=${bal < REWARD_FINE.pts || busy} onClick=${() => go('fine', {})} style="${btn(bal >= REWARD_FINE.pts && !busy)};margin-top:8px;width:100%">Giảm ${REWARD_FINE.pct}% (−${fmtShort(fineSave)})</button>
+          `}
+        </div>
+
+        ${log.length > 0 && html`
+          <p class="text-xs font-semibold" style="color:${mut};margin-top:14px">Đã đổi gần đây</p>
+          ${log.map(r => html`<div key=${r.id} class="flex items-center justify-between text-xs" style="padding:5px 0;border-bottom:1px solid ${bd};color:${fg}"><span>${fmtD(r.day)} · ${(typeLabel[r.type] || (() => r.type))(r)}</span><span style="color:${mut}">−${fmt(r.pts)}</span></div>`)}
+        `}
+        <p class="text-xs" style="color:${mut};margin-top:12px;line-height:1.5">Kiếm điểm: mở app mỗi ngày 10, hôm trước tiêu dưới ${fmtShort(STREAK_LIMIT)} +20, chuỗi ngày +5/ngày (tối đa 50), mốc 3/7/14/30/100 ngày thưởng lớn, thỉnh thoảng có 🍀 may mắn +50.</p>
+      </div>
+    </div>
+  `;
 }
 
 function Confetti({ n = 36 }) {
@@ -2790,6 +2899,8 @@ function App() {
   const [checkinReward, setCheckinReward] = useState(null);
   const [catLimits, setCatLimits] = useState(DEFAULT_LIMITS);
   const [penalties, setPenalties] = useState({});
+  const [rewards, setRewards] = useState({ log: [] });
+  const [showRewards, setShowRewards] = useState(false);
   const [showLimits, setShowLimits] = useState(false);
   const [showTry, setShowTry] = useState(false);
   const [finance, setFinance] = useState(DEFAULT_FINANCE);
@@ -2872,6 +2983,8 @@ function App() {
         limitsNow.relationship = Math.round(o * 0.8 * 2) / 2; limitsNow.other = Math.round((o - limitsNow.relationship) * 2) / 2;
       }
       let pen = st.penalties || {};
+      const rew = (st.rewards && typeof st.rewards === 'object') ? { log: [], ...st.rewards } : { log: [] };
+      setRewards(rew);
       setCatLimits(limitsNow);
       setFinance({ ...DEFAULT_FINANCE, ...(st.finance || {}) });
       setPenalties(pen);
@@ -2882,7 +2995,7 @@ function App() {
         const newExps = [];
         for (const cat of PENALTY_CATS) {
           const spent = expData.filter(e => e.date.slice(0, 7) === pm && e.category === cat).reduce((s, e) => s + e.amount, 0);
-          const lim = computeLimit(cat, pm, limitsNow, pen, budData);
+          const lim = computeLimit(cat, pm, limitsNow, pen, budData, rew);
           const over = spent - lim;
           if (baseLimitOf(cat, pm, limitsNow, budData, pen) > 0 && over > 0) {
             const fine = computeFine(over, lim, budgetAmountOf(budData, pm, pen));
@@ -2955,9 +3068,9 @@ function App() {
     if (!dateFrom.endsWith('-01') || dateFrom.slice(0, 7) !== dateTo.slice(0, 7)) return null;
     const m = dateFrom.slice(0, 7);
     const out = {};
-    CATEGORIES.forEach(c => { const l = computeLimit(c.id, m, catLimits, penalties, budgets); if (baseLimitOf(c.id, m, catLimits, budgets, penalties) > 0) out[c.id] = l; });
+    CATEGORIES.forEach(c => { const l = computeLimit(c.id, m, catLimits, penalties, budgets, rewards); if (baseLimitOf(c.id, m, catLimits, budgets, penalties) > 0) out[c.id] = l; });
     return out;
-  }, [dateFrom, dateTo, catLimits, penalties, budgets]);
+  }, [dateFrom, dateTo, catLimits, penalties, budgets, rewards]);
   const baseLimitsForRange = useMemo(() => {
     if (!limitsForRange) return null;
     const m = dateFrom.slice(0, 7);
@@ -2975,10 +3088,57 @@ function App() {
   const limitCheck = useCallback((cat, date, amount, excludeId) => {
     const m = (date || today()).slice(0, 7);
     if (!baseLimitOf(cat, m, catLimits, budgets, penalties)) return null;
-    const limit = computeLimit(cat, m, catLimits, penalties, budgets);
+    const limit = computeLimit(cat, m, catLimits, penalties, budgets, rewards);
     const spent = expenses.filter(e => e.date.slice(0, 7) === m && e.category === cat && e.id !== excludeId).reduce((s, e) => s + e.amount, 0);
     return { month: m, limit, spent, amount, penalized: PENALTY_CATS.includes(cat) && m >= PENALTY_START };
-  }, [catLimits, penalties, budgets, expenses]);
+  }, [catLimits, penalties, budgets, expenses, rewards]);
+  // Đổi điểm: trừ điểm bằng cách ghi log vào settings.rewards; quyền lợi áp ngay
+  const redeemReward = async (type, payload) => {
+    const bal = pointsBalance(checkins, rewards);
+    const t = today(), m = t.slice(0, 7);
+    const jsonOpts = (body, method = 'POST') => ({ method, headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    let entry = null;
+    if (type === 'quota') {
+      if (bal < REWARD_QUOTA.pts || !PENALTY_CATS.includes(payload.cat)) return;
+      entry = { id: uid(), day: t, type, pts: REWARD_QUOTA.pts, month: m, cat: payload.cat, amount: REWARD_QUOTA.amount };
+    } else if (type === 'patch') {
+      if (bal < REWARD_PATCH.pts || !payload.day || payload.day >= t) return;
+      const r = await apiCall('/api/checkins', jsonOpts({ day: payload.day, points: 0, note: 'Vá chuỗi bằng ' + REWARD_PATCH.pts + ' điểm' })).catch(() => null);
+      if (!r || !r.created) return;
+      setCheckins(prev => [...prev, { day: payload.day, points: 0 }].sort((a, b) => a.day < b.day ? -1 : 1));
+      entry = { id: uid(), day: t, type, pts: REWARD_PATCH.pts, patched: payload.day };
+    } else if (type === 'fine') {
+      const pm = prevMonthOf(m), rec = penalties[pm];
+      if (bal < REWARD_FINE.pts || !rec) return;
+      const cats = PENALTY_CATS.filter(c => rec[c] && rec[c].fine > 0);
+      if (!cats.length) return;
+      const disc = Math.max(...cats.map(c => rec[c].disc || 0));
+      if (disc >= REWARD_FINE.maxPct) return;
+      const newDisc = disc + REWARD_FINE.pct;
+      const newRec = { ...rec };
+      let saved = 0;
+      for (const c of cats) {
+        const r0 = rec[c], fine0 = r0.fine0 || r0.fine;
+        const fine = Math.round(fine0 * (1 - newDisc / 100) / 1000) * 1000;
+        saved += r0.fine - fine;
+        newRec[c] = { ...r0, fine0, fine, disc: newDisc };
+        const ex = expenses.find(e => e.id === r0.expense_id);
+        if (ex) {
+          const upd = { ...ex, amount: fine, detail: (ex.detail || '').replace(/ · giảm \d+% bằng điểm$/, '') + ' · giảm ' + newDisc + '% bằng điểm' };
+          setExpenses(prev => prev.map(e => e.id === ex.id ? upd : e));
+          await apiCall('/api/expenses/' + ex.id, jsonOpts(upd, 'PUT')).catch(() => null);
+        }
+      }
+      const pen = { ...penalties, [pm]: newRec };
+      setPenalties(pen);
+      await apiCall('/api/settings', jsonOpts({ penalties: pen })).catch(() => null);
+      entry = { id: uid(), day: t, type, pts: REWARD_FINE.pts, month: pm, pct: newDisc, amount: saved };
+    }
+    if (!entry) return;
+    const rew = { ...rewards, log: [...rewardLog(rewards), entry] };
+    setRewards(rew);
+    await apiCall('/api/settings', jsonOpts({ rewards: rew })).catch(() => null);
+  };
   const saveLimits = async (vals) => {
     setCatLimits(vals); setShowLimits(false);
     await apiCall('/api/settings', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ cat_limits: vals }) });
@@ -3251,7 +3411,7 @@ function App() {
           <div class="flex items-center gap-2">
             <h1 class="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Thu Chi</h1>
             <span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium">${userCode}</span>
-            ${checkins.length > 0 && html`<span class="px-2 py-0.5 rounded-full text-xs font-semibold" style="background:${dark ? 'rgba(245,158,11,0.15)' : '#fffbeb'};color:${dark ? '#fbbf24' : '#b45309'}" title="Điểm check-in · chuỗi ngày">⭐ ${fmtShort(checkins.reduce((s, c) => s + (c.points || 0), 0))}</span>`}
+            ${checkins.length > 0 && html`<button onClick=${() => setShowRewards(true)} class="px-2 py-0.5 rounded-full text-xs font-semibold" style="background:${dark ? 'rgba(245,158,11,0.15)' : '#fffbeb'};color:${dark ? '#fbbf24' : '#b45309'};border:none;cursor:pointer" title="Điểm check-in · bấm để đổi thưởng">⭐ ${fmtShort(pointsBalance(checkins, rewards))}</button>`}
           </div>
           <div class="relative">
             <button onClick=${() => setShowSettings(!showSettings)}
@@ -3266,6 +3426,7 @@ function App() {
                   ${[
                     { label: dark ? 'Chế độ sáng' : 'Chế độ tối', icon: dark ? '\u2600\uFE0F' : '\u{1F319}', fn: () => setDark(!dark) },
                     { label: 'Hạn mức danh mục', icon: '\u{1F3AF}', fn: () => { setShowLimits(true); setShowSettings(false); } },
+                    { label: 'Đổi điểm thưởng', icon: '\u2B50', fn: () => { setShowRewards(true); setShowSettings(false); } },
                     { label: 'Tình hình tài chính', icon: '\u{1F4BC}', fn: () => { setShowFinance(true); setShowSettings(false); } },
                     { label: 'QR Code', icon: '\u{1F4F1}', fn: () => { setShowQR(true); setShowSettings(false); } },
                     { label: 'Projects' + (projects.length > 0 ? ' (' + projects.length + ')' : ''), icon: '\u{1F4C1}', fn: () => { setShowProjects(true); setShowSettings(false); } },
@@ -3292,6 +3453,7 @@ function App() {
       </header>
 
       ${checkinReward && html`<${CheckinModal} reward=${checkinReward} dark=${dark} onClose=${() => setCheckinReward(null)} />`}
+      ${showRewards && html`<${RewardsModal} checkins=${checkins} rewards=${rewards} penalties=${penalties} catLimits=${catLimits} budgets=${budgets} dark=${dark} onRedeem=${redeemReward} onClose=${() => setShowRewards(false)} />`}
       ${showLimits && html`<${LimitsModal} catLimits=${catLimits} onSave=${saveLimits} onClose=${() => setShowLimits(false)} dark=${dark} month=${budgetMonth} monthBudget=${budgetAmountOf(budgets, budgetMonth, penalties)} />`}
       ${showFinance && html`<${FinanceModal} finance=${finance} dark=${dark} avgSpend=${budgetAmountOf(budgets, budgetMonth, penalties)} onClose=${() => setShowFinance(false)}
         onSave=${async (f) => { setFinance(f); setShowFinance(false); await apiCall('/api/settings', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ finance: f }) }); }} />`}
