@@ -1733,9 +1733,186 @@ function weekGoalInfo(expenses, budgets, penalties, t) {
   const streak = weekWinStreakBefore(cur, expenses, budgets, penalties);
   return { budget: st.budget, spend: st.spend, to: st.to, streak, pts: weekWinPts(streak), amount: weekWinAmount(Math.max(0, st.budget - st.spend)) };
 }
-const pointsEarned = (checkins) => checkins.reduce((s, c) => s + (c.points || 0), 0);
-const pointsSpent = (rewards) => rewardLog(rewards).reduce((s, r) => s + (r.pts || 0), 0);
-const pointsBalance = (checkins, rewards) => pointsEarned(checkins) - pointsSpent(rewards);
+
+// ── Hũ thưởng · phạt: một chỗ gom mọi khoản phạt (nộp vào Tiết kiệm) và thưởng (nới trần, giảm phạt, thử thách).
+// Hũ có tên + biểu tượng + đích để tiền phạt dồn cho một trải nghiệm cụ thể, thay vì chỉ là con số. ──
+const DEFAULT_JAR = { name: 'Hũ thưởng · phạt', emoji: '\u{1F3FA}', target: 0 };
+const JAR_EMOJIS = ['\u{1F3FA}', '\u2708\uFE0F', '\u{1F3D6}\uFE0F', '\u{1F37C}', '\u{1F48D}', '\u{1F4F1}', '\u{1F3E0}', '\u{1F9D8}', '\u{1F381}'];
+// Thử thách 3 ngày không tiêu linh tinh: Mua sắm, Làm đẹp, Giải trí, Khác = 0đ ba ngày liền
+const CHALLENGE = { days: 3, pts: 100, cats: ['shopping', 'beauty', 'entertainment', 'other'] };
+const shiftDay = (d, n) => { const x = new Date(d + 'T00:00:00Z'); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+const nextMonthOf = (m) => { const y = +m.slice(0, 4), mo = +m.slice(5, 7); return mo === 12 ? (y + 1) + '-01' : y + '-' + String(mo + 1).padStart(2, '0'); };
+const fmtDM = (d) => d.slice(8, 10) + '/' + d.slice(5, 7);
+const DOW_NAMES = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+// Sổ hũ: phạt/thưởng dưới trần từ penalties, thưởng tuần/đổi điểm/giảm phạt/thử thách từ rewards.log; mới nhất trước
+function jarLedger(penalties, rewards) {
+  const out = [];
+  for (const [m, rec] of Object.entries(penalties || {})) {
+    const day = nextMonthOf(m) + '-01', mm = 'T' + parseInt(m.slice(5), 10);
+    for (const [cat, r] of Object.entries(rec || {})) {
+      const name = catMap[cat] ? catMap[cat].name : cat;
+      if (r.fine > 0) out.push({ id: 'f' + m + cat, day, kind: 'fine', label: '\u2696\uFE0F Phạt vượt ' + name + ' ' + mm + (r.disc ? ' (đã giảm ' + r.disc + '%)' : ''), amount: -r.fine });
+      else if (r.bonus > 0) out.push({ id: 'b' + m + cat, day, kind: 'bonus', label: '\u{1F381} Dưới trần ' + name + ' ' + mm + ': nới trần tháng sau', amount: r.bonus });
+    }
+  }
+  for (const r of rewardLog(rewards)) {
+    if (r.type === 'weekwin') out.push({ id: r.id, day: r.day, kind: 'reward', label: '\u{1F3C5} Thưởng tuần ' + fmtDM(r.week) + (r.cat ? ' \u2192 ' + (catMap[r.cat] ? catMap[r.cat].name : r.cat) : ' (chờ chọn hạng mục)'), amount: r.amount || 0 });
+    else if (r.type === 'quota') out.push({ id: r.id, day: r.day, kind: 'reward', label: '\u2B50 Đổi ' + fmt(r.pts) + ' điểm \u2192 trần ' + (catMap[r.cat] ? catMap[r.cat].name : r.cat), amount: r.amount || 0 });
+    else if (r.type === 'fine') out.push({ id: r.id, day: r.day, kind: 'reward', label: '\u2B50 Giảm ' + r.pct + '% phạt T' + parseInt(r.month.slice(5), 10), amount: r.amount || 0 });
+    else if (r.type === 'challenge') out.push({ id: r.id, day: r.day, kind: r.result === 'win' ? 'win' : 'fail', label: '\u{1F3AF} Thử thách ' + CHALLENGE.days + ' ngày: ' + (r.result === 'win' ? 'hoàn thành +' + (-r.pts) + ' điểm' : 'đứt ngày ' + fmtDM(r.failDay || r.day) + (r.failSpent ? ' (' + fmtShort(r.failSpent) + ')' : '')), amount: 0 });
+  }
+  return out.sort((a, b) => a.day < b.day ? 1 : a.day > b.day ? -1 : 0);
+}
+const jarTotals = (penalties, rewards) => {
+  const ledger = jarLedger(penalties, rewards);
+  return { ledger, fines: ledger.filter(e => e.kind === 'fine').reduce((s, e) => s - e.amount, 0), rewards: ledger.filter(e => e.kind === 'reward' || e.kind === 'bonus').reduce((s, e) => s + e.amount, 0) };
+};
+// Trạng thái thử thách theo chi tiêu thật: từng ngày sạch/đứt, kết quả active | win | fail
+function challengeStatus(ch, expenses, t) {
+  if (!ch || !ch.start) return null;
+  const days = [];
+  for (let i = 0; i < CHALLENGE.days; i++) {
+    const d = shiftDay(ch.start, i);
+    const spent = expenses.filter(e => e.date === d && CHALLENGE.cats.includes(e.category)).reduce((s, e) => s + e.amount, 0);
+    days.push({ d, spent, state: d > t ? 'future' : spent > 0 ? 'fail' : d < t ? 'clean' : 'today' });
+  }
+  const fail = days.find(x => x.state === 'fail');
+  const end = days[days.length - 1].d;
+  return { days, end, result: fail ? 'fail' : t > end ? 'win' : 'active', failDay: fail ? fail.d : null, failSpent: fail ? fail.spent : 0, dayNo: days.filter(x => x.d <= t).length };
+}
+// So với chính mình: tuần này (T2 → hôm nay) với cùng khoảng tuần trước, không so với trung bình
+function weekCompare(expenses, t) {
+  const dow = (new Date(t + 'T00:00:00Z').getUTCDay() || 7) - 1; // 0 = Thứ 2
+  const ws = shiftDay(t, -dow), pws = shiftDay(ws, -7), pSame = shiftDay(pws, dow);
+  const sum = (f, to, cat = null) => expenses.filter(e => e.date >= f && e.date <= to && e.category !== SAVINGS_CAT && (!cat || e.category === cat)).reduce((s, e) => s + e.amount, 0);
+  const cur = sum(ws, t), same = sum(pws, pSame), full = sum(pws, shiftDay(pws, 6));
+  if (same <= 0) return null;
+  let top = null;
+  for (const c of CATEGORIES) { if (c.id === SAVINGS_CAT) continue; const diff = sum(ws, t, c.id) - sum(pws, pSame, c.id); if (diff > 0 && (!top || diff > top.diff)) top = { cat: c, diff }; }
+  return { cur, same, full, pct: Math.round((cur - same) / same * 100), top, dow };
+}
+// Ngày trong tuần hay tiêu linh tinh nhất trong 8 tuần qua; chỉ nhắc đúng ngày đó, trước khi lỡ tay
+function riskyDay(expenses, t) {
+  const from = shiftDay(t, -56);
+  const by = Array(7).fill(0), hit = Array(7).fill(0);
+  for (const e of expenses) {
+    if (e.date < from || e.date >= t || !CHALLENGE.cats.includes(e.category)) continue;
+    const d = new Date(e.date + 'T00:00:00Z').getUTCDay(); by[d] += e.amount; hit[d]++;
+  }
+  const avg = by.map(v => v / 8);
+  const todayDow = new Date(t + 'T00:00:00Z').getUTCDay();
+  const maxDow = avg.indexOf(Math.max(...avg));
+  if (maxDow !== todayDow || avg[maxDow] < 100000 || hit[maxDow] < 3) return null;
+  const spentToday = expenses.filter(e => e.date === t && CHALLENGE.cats.includes(e.category)).reduce((s, e) => s + e.amount, 0);
+  return { dow: todayDow, avg: avg[maxDow], spentToday };
+}
+
+function WeekCompareCard({ expenses }) {
+  const t = today();
+  const wc = useMemo(() => weekCompare(expenses, t), [expenses, t]);
+  const risk = useMemo(() => riskyDay(expenses, t), [expenses, t]);
+  if (!wc && !risk) return null;
+  const better = wc && wc.pct <= 0;
+  return html`
+    <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      ${wc && html`
+        <div class="flex items-center gap-3">
+          <div style="font-size:26px;line-height:1">${better ? '\u{1F4C9}' : '\u{1F4C8}'}</div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-baseline gap-1.5 flex-wrap">
+              <span class="text-base font-bold" style="color:${better ? '#16a34a' : '#ef4444'}">${wc.pct === 0 ? 'Bằng' : (better ? 'Ít hơn ' : 'Nhiều hơn ') + Math.abs(wc.pct) + '%'}</span>
+              <span class="text-xs text-zinc-500 dark:text-zinc-400">so với cùng kỳ tuần trước (T2→${DOW_NAMES[(wc.dow + 1) % 7]})</span>
+            </div>
+            <p class="text-xs text-zinc-500 dark:text-zinc-400" style="margin-top:2px">${fmtShort(wc.cur)} vs ${fmtShort(wc.same)} · cả tuần trước ${fmtShort(wc.full)}${wc.top ? ' · tăng nhất: ' + wc.top.cat.emoji + ' ' + wc.top.cat.name + ' +' + fmtShort(wc.top.diff) : ''}</p>
+          </div>
+        </div>`}
+      ${risk && html`
+        <p class="text-xs" style="margin-top:${wc ? '8px' : '0'};padding:7px 9px;border-radius:9px;line-height:1.5;background:rgba(245,158,11,0.12);color:#b45309">\u26A0\uFE0F Hôm nay là ${DOW_NAMES[risk.dow]}: 8 tuần qua bạn tiêu linh tinh trung bình <b>${fmtShort(risk.avg)}</b> vào ${DOW_NAMES[risk.dow]}. ${risk.spentToday > 0 ? 'Hôm nay đã ' + fmtShort(risk.spentToday) + ', dừng ở đây là thắng.' : 'Hôm nay chưa tiêu đồng nào, giữ sạch là qua ngày khó nhất tuần.'}</p>`}
+    </div>
+  `;
+}
+
+function JarCard({ jar, penalties, rewards, challenge, expenses, onSaveJar, onOpenRewards, onStartChallenge }) {
+  const [edit, setEdit] = useState(false);
+  const [name, setName] = useState(jar.name);
+  const [emoji, setEmoji] = useState(jar.emoji);
+  const [target, setTarget] = useState(jar.target ? String(jar.target) : '');
+  const [more, setMore] = useState(false);
+  const t = today();
+  const { fines, rewards: rew, ledger } = useMemo(() => jarTotals(penalties, rewards), [penalties, rewards]);
+  const cs = challengeStatus(challenge, expenses, t);
+  const lastCh = rewardLog(rewards).filter(r => r.type === 'challenge').slice(-1)[0];
+  const showLast = lastCh && !cs && shiftDay(lastCh.day, 3) >= t;
+  const pct = jar.target > 0 ? Math.min(100, fines / jar.target * 100) : (fines > 0 ? 55 : 6);
+  const pending = rewardLog(rewards).some(r => r.type === 'weekwin' && !r.cat);
+  const shown = more ? ledger : ledger.slice(0, 5);
+  const saveJar = () => { onSaveJar({ name: name.trim() || DEFAULT_JAR.name, emoji, target: parseInt((target || '0').replace(/\D/g, ''), 10) || 0 }); setEdit(false); };
+  const jarPath = 'M10 14 h36 v40 a10 10 0 0 1 -10 10 h-16 a10 10 0 0 1 -10 -10 z';
+  return html`
+    <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+      <div class="flex items-center gap-3">
+        <svg width="56" height="68" viewBox="0 0 56 68" style="flex-shrink:0">
+          <defs><clipPath id="jarclip"><path d=${jarPath} /></clipPath></defs>
+          <rect x="16" y="4" width="24" height="8" rx="3" class="fill-zinc-300 dark:fill-zinc-600" />
+          <path d=${jarPath} class="fill-zinc-100 dark:fill-zinc-900 stroke-zinc-400 dark:stroke-zinc-500" stroke-width="2" />
+          <rect x="10" y=${14 + 50 * (1 - pct / 100)} width="36" height=${50 * pct / 100} fill="#14b8a6" opacity=".85" clip-path="url(#jarclip)" style="transition:all .6s" />
+          <text x="28" y="40" text-anchor="middle" font-size="18">${jar.emoji}</text>
+        </svg>
+        <div class="flex-1 min-w-0">
+          ${edit ? html`
+            <div class="space-y-1.5">
+              <div style="display:flex;gap:4px;flex-wrap:wrap">${JAR_EMOJIS.map(e => html`<button key=${e} onClick=${() => setEmoji(e)} style="font-size:16px;padding:2px 5px;border-radius:7px;border:1px solid ${e === emoji ? '#14b8a6' : 'transparent'};background:${e === emoji ? 'rgba(20,184,166,0.15)' : 'transparent'}">${e}</button>`)}</div>
+              <input value=${name} onInput=${e => setName(e.target.value)} placeholder="Tên hũ, VD: Chuyến đi Đà Lạt" class="w-full px-2.5 py-1.5 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-600 text-zinc-800 dark:text-zinc-100 focus:outline-none" />
+              <input value=${target} onInput=${e => setTarget(e.target.value)} placeholder="Đích (đ), bỏ trống nếu không có" inputMode="numeric" class="w-full px-2.5 py-1.5 text-sm rounded-lg bg-zinc-50 dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-600 text-zinc-800 dark:text-zinc-100 focus:outline-none" onKeyDown=${e => e.key === 'Enter' && saveJar()} />
+              <div class="flex gap-3"><button onClick=${saveJar} class="text-xs font-semibold" style="color:#10b981">Lưu</button><button onClick=${() => setEdit(false)} class="text-xs text-zinc-400">Hủy</button></div>
+            </div>` : html`
+            <div class="flex items-center gap-1.5 min-w-0">
+              <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">${jar.name}</span>
+              <button onClick=${() => { setName(jar.name); setEmoji(jar.emoji); setTarget(jar.target ? String(jar.target) : ''); setEdit(true); }} class="text-xs text-zinc-400 shrink-0" title="Đặt tên / đích cho hũ">\u270F\uFE0F</button>
+            </div>
+            <div class="flex items-baseline gap-1.5 flex-wrap" style="margin-top:2px">
+              <span class="text-lg font-bold" style="color:#0d9488">${fmtShort(fines)}</span>
+              <span class="text-xs text-zinc-500 dark:text-zinc-400">${jar.target > 0 ? '/ ' + fmtShort(jar.target) + ' (' + Math.round(pct) + '%)' : 'tiền phạt đã nộp vào Tiết kiệm'}</span>
+            </div>
+            <button onClick=${onOpenRewards} class="text-xs" style="margin-top:2px;color:#b45309;background:none;border:none;padding:0;text-align:left">\u{1F3C5} Thưởng đã nhận <b>${fmtShort(rew)}</b>${pending ? ' · \u{1F381} có thưởng chờ chọn' : ''} \u203A</button>
+          `}
+        </div>
+      </div>
+
+      ${ledger.length === 0 ? html`<p class="text-xs text-zinc-400" style="margin-top:8px">Chưa có khoản phạt hay thưởng nào. Mỗi lần được thưởng hoặc bị phạt sẽ hiện ở đây.</p>` : html`
+        <div style="margin-top:8px;border-top:1px solid rgba(128,128,128,0.15)">
+          ${shown.map(e => html`
+            <div key=${e.id} class="flex items-center justify-between gap-2 text-xs" style="padding:5px 0;border-bottom:1px solid rgba(128,128,128,0.1)">
+              <span class="text-zinc-700 dark:text-zinc-300 min-w-0" style="line-height:1.4"><span class="text-zinc-400">${fmtDM(e.day)}</span> · ${e.label}</span>
+              ${e.amount !== 0 && html`<span class="font-semibold shrink-0" style="color:${e.amount < 0 ? '#ef4444' : '#16a34a'}">${e.amount < 0 ? '\u2212' : '+'}${fmtShort(Math.abs(e.amount))}</span>`}
+            </div>`)}
+          ${ledger.length > 5 && html`<button onClick=${() => setMore(!more)} class="text-xs text-zinc-400" style="margin-top:4px">${more ? 'Thu gọn' : 'Xem thêm ' + (ledger.length - 5) + ' khoản'}</button>`}
+        </div>`}
+
+      <div style="margin-top:10px;padding:9px 10px;border-radius:10px;background:rgba(168,85,247,0.08)">
+        ${cs ? html`
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-semibold text-zinc-800 dark:text-zinc-200">\u{1F3AF} Thử thách ngày ${cs.dayNo}/${CHALLENGE.days}${cs.result === 'fail' ? ' · đứt' : cs.result === 'win' ? ' · hoàn thành!' : ''}</span>
+            <div style="display:flex;gap:5px">${cs.days.map(d => html`<span key=${d.d} title=${d.d} style="width:18px;height:18px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;background:${d.state === 'clean' ? '#22c55e' : d.state === 'fail' ? '#ef4444' : d.state === 'today' ? 'rgba(168,85,247,0.25)' : 'rgba(128,128,128,0.15)'};color:#fff">${d.state === 'clean' ? '\u2713' : d.state === 'fail' ? '\u2715' : ''}</span>`)}</div>
+          </div>
+          <p class="text-xs text-zinc-500 dark:text-zinc-400" style="margin-top:3px">${CHALLENGE.cats.map(c => catMap[c].name).join(', ')} = 0đ đến hết ${fmtDM(cs.end)} \u2192 +${CHALLENGE.pts} điểm.${cs.dayNo >= CHALLENGE.days ? ' Ngày cuối rồi, qua nốt hôm nay là xong.' : ''}</p>
+        ` : html`
+          <div class="flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <span class="text-xs font-semibold text-zinc-800 dark:text-zinc-200">\u{1F3AF} Thử thách ${CHALLENGE.days} ngày không tiêu linh tinh</span>
+              <p class="text-xs text-zinc-500 dark:text-zinc-400" style="margin-top:2px">${showLast ? (lastCh.result === 'win' ? '\u2705 Lần trước hoàn thành, +' + (-lastCh.pts) + ' điểm. Làm lại?' : '\u274C Lần trước đứt ngày ' + fmtDM(lastCh.failDay || lastCh.day) + '. Thử lại từ hôm nay?') : CHALLENGE.cats.map(c => catMap[c].name).join(', ') + ' = 0đ ' + CHALLENGE.days + ' ngày liền \u2192 +' + CHALLENGE.pts + ' điểm.'}</p>
+            </div>
+            <button onClick=${onStartChallenge} class="text-xs font-semibold shrink-0" style="padding:6px 10px;border-radius:9px;color:#fff;background:linear-gradient(135deg,#a855f7,#ec4899);border:none">Bắt đầu</button>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+}
+// Điểm kiếm = check-in + các khoản thưởng ghi trong rewards.log với pts âm (thử thách); điểm đổi = pts dương
+const pointsEarned = (checkins, rewards) => checkins.reduce((s, c) => s + (c.points || 0), 0) + rewardLog(rewards).filter(r => r.pts < 0).reduce((s, r) => s - r.pts, 0);
+const pointsSpent = (rewards) => rewardLog(rewards).filter(r => r.pts > 0).reduce((s, r) => s + r.pts, 0);
+const pointsBalance = (checkins, rewards) => pointsEarned(checkins, rewards) - pointsSpent(rewards);
 const carryInto = (cat, m, catLimits, penalties, budgets, rewards, depth = 0) => {
   const pm = prevMonthOf(m);
   const rec = penalties[pm] && penalties[pm][cat];
@@ -2147,6 +2324,7 @@ function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month }) {
 
 // ── Check-in hằng ngày: phần thưởng nhỏ khi mở app, để não có "hit" mỗi ngày ──
 const CHECKIN_MILESTONES = { 3: 30, 7: 70, 14: 100, 30: 300, 100: 1000 };
+const MILESTONE_BOXES = [{ label: '\u{1F381} hộp đồng \u00D71', mult: 1 }, { label: '\u{1F381} hộp bạc \u00D71.5', mult: 1.5 }, { label: '\u{1F381} hộp vàng \u00D72', mult: 2 }];
 const CHECKIN_QUOTES = [
   'Mỗi ngày ghi chép là một ngày tiền không trôi đi vô hình.',
   'Nhìn thấy tiền đi đâu là bước đầu để giữ nó lại.',
@@ -2172,8 +2350,12 @@ function computeCheckin(checkins, expenses, t, weekWin = null) {
   if (ySpend <= STREAK_LIMIT) lines.push({ label: ySpend === 0 ? 'Hôm qua không tiêu' : 'Hôm qua dưới ' + fmtShort(STREAK_LIMIT) + ' (' + fmtShort(ySpend) + ')', pts: 20 });
   else if (yLogged) lines.push({ label: 'Hôm qua có ghi chép (' + fmtShort(ySpend) + ')', pts: 5 });
   if (streak > 1) lines.push({ label: 'Chuỗi ' + streak + ' ngày', pts: 5 * Math.min(streak, 10) });
-  if (CHECKIN_MILESTONES[streak]) lines.push({ label: '\u{1F3C6} Mốc ' + streak + ' ngày', pts: CHECKIN_MILESTONES[streak] });
   const seed = daySeed(t);
+  if (CHECKIN_MILESTONES[streak]) {
+    // Hộp quà mốc: 1 trong 3 loại, chọn theo ngày nên không đoán trước được, nhưng mọi thiết bị ra cùng kết quả
+    const box = MILESTONE_BOXES[(seed >> 3) % MILESTONE_BOXES.length];
+    lines.push({ label: '\u{1F3C6} Mốc ' + streak + ' ngày · ' + box.label, pts: Math.round(CHECKIN_MILESTONES[streak] * box.mult) });
+  }
   if (seed % 5 === 0) lines.push({ label: '\u{1F340} Bonus may mắn', pts: 50 });
   if (weekWin && weekWin.won) {
     const fmtD = (d) => d.slice(8, 10) + '/' + d.slice(5, 7);
@@ -2218,7 +2400,7 @@ function RewardsModal({ checkins, rewards, penalties, catLimits, budgets, dark, 
   const fineNext = Math.round(fineBase * (1 - (disc + REWARD_FINE.pct) / 100) / 1000) * 1000;
   const fineSave = fineTotal - fineNext;
   const pendingWins = rewardLog(rewards).filter(r => r.type === 'weekwin' && !r.cat);
-  const log = rewardLog(rewards).filter(r => r.type !== 'weekwin' || r.cat).slice().reverse().slice(0, 8);
+  const log = rewardLog(rewards).filter(r => r.pts > 0 || (r.type === 'weekwin' && r.cat)).slice().reverse().slice(0, 8);
   const go = async (type, payload) => { if (busy) return; setBusy(true); try { await onRedeem(type, payload); } finally { setBusy(false); } };
   const fmtD = (d) => d.slice(8, 10) + '/' + d.slice(5, 7);
   const btn = (ok) => `padding:7px 12px;border-radius:10px;font-size:13px;font-weight:600;border:none;cursor:${ok ? 'pointer' : 'default'};opacity:${ok ? 1 : 0.4};color:#fff;background:linear-gradient(135deg,#f59e0b,#ec4899)`;
@@ -2234,7 +2416,7 @@ function RewardsModal({ checkins, rewards, penalties, catLimits, budgets, dark, 
           <span style="font-size:34px;font-weight:800;color:${fg};line-height:1">${fmt(bal)}</span>
           <span class="text-sm" style="color:${mut}">điểm còn lại</span>
         </div>
-        <p class="text-xs" style="color:${mut};margin-top:4px">Đã kiếm ${fmt(pointsEarned(checkins))} · đã đổi ${fmt(pointsSpent(rewards))} · chuỗi check-in ${st.cur} ngày</p>
+        <p class="text-xs" style="color:${mut};margin-top:4px">Đã kiếm ${fmt(pointsEarned(checkins, rewards))} · đã đổi ${fmt(pointsSpent(rewards))} · chuỗi check-in ${st.cur} ngày</p>
 
         ${pendingWins.map(r => html`
           <div key=${r.id} style="margin-top:14px;padding:12px;border-radius:14px;background:linear-gradient(135deg,rgba(245,158,11,0.18),rgba(236,72,153,0.14));border:1px solid ${dark ? '#854d0e' : '#fcd34d'}">
@@ -2295,7 +2477,7 @@ function RewardsModal({ checkins, rewards, penalties, catLimits, budgets, dark, 
           <p class="text-xs font-semibold" style="color:${mut};margin-top:14px">Đã đổi gần đây</p>
           ${log.map(r => html`<div key=${r.id} class="flex items-center justify-between text-xs" style="padding:5px 0;border-bottom:1px solid ${bd};color:${fg}"><span>${fmtD(r.day)} · ${(typeLabel[r.type] || (() => r.type))(r)}</span><span style="color:${mut}">−${fmt(r.pts)}</span></div>`)}
         `}
-        <p class="text-xs" style="color:${mut};margin-top:12px;line-height:1.5">Kiếm điểm: mở app mỗi ngày 10, hôm trước tiêu dưới ${fmtShort(STREAK_LIMIT)} +20, chuỗi ngày +5/ngày (tối đa 50), mốc 3/7/14/30/100 ngày thưởng lớn, thỉnh thoảng có 🍀 may mắn +50. \u{1F3C5} Tuần (T2→CN) tiêu không hết ngân sách tuần: +${WEEK_WIN.pts} điểm, mỗi tuần thắng liên tiếp cộng thêm ${WEEK_WIN.streakStep} (tối đa ${WEEK_WIN.maxPts}), 1/4 số tuần được nhân đôi, kèm ${WEEK_WIN.rate * 100}% phần dư (${fmtShort(WEEK_WIN.minAmt)}–${fmtShort(WEEK_WIN.maxAmt)}) nới trần Mua sắm/Làm đẹp.</p>
+        <p class="text-xs" style="color:${mut};margin-top:12px;line-height:1.5">Kiếm điểm: mở app mỗi ngày 10, hôm trước tiêu dưới ${fmtShort(STREAK_LIMIT)} +20, chuỗi ngày +5/ngày (tối đa 50), mốc 3/7/14/30/100 ngày thưởng lớn, thỉnh thoảng có 🍀 may mắn +50. \u{1F3C5} Tuần (T2→CN) tiêu không hết ngân sách tuần: +${WEEK_WIN.pts} điểm, mỗi tuần thắng liên tiếp cộng thêm ${WEEK_WIN.streakStep} (tối đa ${WEEK_WIN.maxPts}), 1/4 số tuần được nhân đôi, kèm ${WEEK_WIN.rate * 100}% phần dư (${fmtShort(WEEK_WIN.minAmt)}–${fmtShort(WEEK_WIN.maxAmt)}) nới trần Mua sắm/Làm đẹp. \u{1F3AF} Thử thách ${CHALLENGE.days} ngày không tiêu linh tinh (bắt đầu ở hũ trên trang chính): +${CHALLENGE.pts}. Mốc check-in mở hộp quà đồng/bạc/vàng (×1/×1.5/×2).</p>
       </div>
     </div>
   `;
@@ -2323,8 +2505,8 @@ function CheckinModal({ reward, onClose, dark }) {
     <div class="fixed inset-0 z-[9999] flex items-center justify-center fade-in" style="background:rgba(0,0,0,0.55);padding:16px" onClick=${onClose}>
       <${Confetti} />
       <div class="pop-in w-full" style="max-width:340px;background:${dark ? '#1e293b' : '#fff'};border-radius:20px;padding:24px 20px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.35)" onClick=${e => e.stopPropagation()}>
-        <div style="font-size:52px;line-height:1">${reward.weekWin ? '\u{1F3C5}' : reward.milestone ? '\u{1F3C6}' : reward.streak >= 7 ? '\u{1F525}' : '\u{1F381}'}</div>
-        <p class="text-xs font-semibold" style="color:${dark ? '#94a3b8' : '#71717a'};margin-top:10px;letter-spacing:.08em;text-transform:uppercase">Check-in ngày ${reward.streak}</p>
+        <div style="font-size:52px;line-height:1">${reward.icon ? reward.icon : reward.weekWin ? '\u{1F3C5}' : reward.milestone ? '\u{1F3C6}' : reward.streak >= 7 ? '\u{1F525}' : '\u{1F381}'}</div>
+        <p class="text-xs font-semibold" style="color:${dark ? '#94a3b8' : '#71717a'};margin-top:10px;letter-spacing:.08em;text-transform:uppercase">${reward.title || 'Check-in ngày ' + reward.streak}</p>
         <p style="font-size:40px;font-weight:800;line-height:1.1;margin-top:4px;color:${dark ? '#fbbf24' : '#d97706'}">+${got}</p>
         <p class="text-xs" style="color:${dark ? '#94a3b8' : '#a1a1aa'}">điểm</p>
         <div style="margin-top:14px;text-align:left" class="space-y-1.5">
@@ -2344,13 +2526,15 @@ function CheckinModal({ reward, onClose, dark }) {
   `;
 }
 
-function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo, filterCat, onFilter, limits, penaltyNote, baseLimits, monthBudget }) {
+function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo, filterCat, onFilter, limits, penaltyNote, baseLimits, monthBudget, jar, penalties, rewards, challenge, onSaveJar, onOpenRewards, onStartChallenge }) {
   const [expanded, setExpanded] = useState(() => load('tc-insights', false));
   useEffect(() => { save('tc-insights', expanded); }, [expanded]);
 
   return html`
     <div>
       <${StreakCard} expenses=${allExpenses} />
+      <${WeekCompareCard} expenses=${allExpenses} />
+      <${JarCard} jar=${jar} penalties=${penalties} rewards=${rewards} challenge=${challenge} expenses=${allExpenses} onSaveJar=${onSaveJar} onOpenRewards=${onOpenRewards} onStartChallenge=${onStartChallenge} />
       <${CategoryChart} expenses=${rangeExpenses} allExpenses=${allExpenses} filterCat=${filterCat} onFilter=${onFilter} dateFrom=${dateFrom} dateTo=${dateTo} limits=${limits} penaltyNote=${penaltyNote} monthBudget=${monthBudget} baseLimits=${baseLimits} />
       <div class="mx-4 mt-3">
         <button onClick=${() => setExpanded(!expanded)}
@@ -2987,6 +3171,9 @@ function App() {
   const [penalties, setPenalties] = useState({});
   const [rewards, setRewards] = useState({ log: [] });
   const [showRewards, setShowRewards] = useState(false);
+  const [jar, setJar] = useState(DEFAULT_JAR);
+  const [challenge, setChallenge] = useState(null);
+  const challengeBusy = useRef(false);
   const [showLimits, setShowLimits] = useState(false);
   const [showTry, setShowTry] = useState(false);
   const [finance, setFinance] = useState(DEFAULT_FINANCE);
@@ -3074,6 +3261,8 @@ function App() {
       setCatLimits(limitsNow);
       setFinance({ ...DEFAULT_FINANCE, ...(st.finance || {}) });
       setPenalties(pen);
+      setJar({ ...DEFAULT_JAR, ...(st.jar || {}) });
+      setChallenge(st.challenge && st.challenge.start ? st.challenge : null);
       // Chốt phạt tháng trước, mỗi tháng một lần. Ghi khoản Tiết kiệm = tiền phạt để bạn chuyển thật.
       const curM = today().slice(0, 7), pm = prevMonthOf(curM);
       if (pm >= PENALTY_START && !pen[pm] && Array.isArray(expData) && budData && typeof budData === 'object') {
@@ -3187,6 +3376,24 @@ function App() {
     const spent = expenses.filter(e => e.date.slice(0, 7) === m && e.category === cat && e.id !== excludeId).reduce((s, e) => s + e.amount, 0);
     return { month: m, limit, spent, amount, penalized: PENALTY_CATS.includes(cat) && m >= PENALTY_START };
   }, [catLimits, penalties, budgets, expenses, rewards]);
+  const postSettings = (body) => apiCall('/api/settings', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).catch(() => null);
+  const saveJar = async (j) => { setJar(j); await postSettings({ jar: j }); };
+  const startChallenge = async () => { const ch = { start: today(), days: CHALLENGE.days }; setChallenge(ch); await postSettings({ challenge: ch }); };
+  // Chốt thử thách khi chi tiêu thay đổi: đứt thì ghi sổ, xong thì cộng điểm (pts âm trong rewards.log) và bật màn thưởng
+  useEffect(() => {
+    if (!challenge || challengeBusy.current) return;
+    const cs = challengeStatus(challenge, expenses, today());
+    if (!cs || cs.result === 'active') return;
+    challengeBusy.current = true;
+    const already = rewardLog(rewards).some(r => r.type === 'challenge' && r.start === challenge.start);
+    const entry = cs.result === 'win'
+      ? { id: uid(), day: today(), type: 'challenge', pts: -CHALLENGE.pts, start: challenge.start, result: 'win' }
+      : { id: uid(), day: today(), type: 'challenge', pts: 0, start: challenge.start, result: 'fail', failDay: cs.failDay, failSpent: cs.failSpent };
+    const rew = already ? rewards : { ...rewards, log: [...rewardLog(rewards), entry] };
+    setRewards(rew); setChallenge(null);
+    if (!already && cs.result === 'win') setCheckinReward({ title: 'Thử thách ' + CHALLENGE.days + ' ngày', icon: '\u{1F3AF}', streak: 0, lines: [{ label: 'Không tiêu linh tinh ' + CHALLENGE.days + ' ngày liền', pts: CHALLENGE.pts }], pts: CHALLENGE.pts, total: pointsEarned(checkins, rew), quote: 'Ba ngày không mua gì, mà vẫn chẳng thiếu gì.', milestone: true });
+    postSettings({ rewards: rew, challenge: null }).finally(() => { challengeBusy.current = false; });
+  }, [challenge, expenses]);
   // Đổi điểm: trừ điểm bằng cách ghi log vào settings.rewards; quyền lợi áp ngay
   const redeemReward = async (type, payload) => {
     const bal = pointsBalance(checkins, rewards);
@@ -3600,7 +3807,8 @@ function App() {
             })}
           </div>
         `}
-        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} dateFrom=${dateFrom} dateTo=${dateTo} filterCat=${filterCat} onFilter=${applyFilter} limits=${limitsForRange} penaltyNote=${penaltyNote} baseLimits=${baseLimitsForRange} monthBudget=${budgetAmountOf(budgets, dateFrom.slice(0, 7), penalties)} />
+        <${Dashboard} rangeExpenses=${rangeExpenses} allExpenses=${expenses} budgets=${budgets} onEdit=${(e) => setModal(e)} dateFrom=${dateFrom} dateTo=${dateTo} filterCat=${filterCat} onFilter=${applyFilter} limits=${limitsForRange} penaltyNote=${penaltyNote} baseLimits=${baseLimitsForRange} monthBudget=${budgetAmountOf(budgets, dateFrom.slice(0, 7), penalties)}
+          jar=${jar} penalties=${penalties} rewards=${rewards} challenge=${challenge} onSaveJar=${saveJar} onOpenRewards=${() => setShowRewards(true)} onStartChallenge=${startChallenge} />
 
         <div class="px-4 mt-4" id="expense-list" style="scroll-margin-top:8px">
           <div class="relative flex items-center">
