@@ -671,6 +671,14 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
   const monthLabel = label || (monthCount > 1
     ? monthCount + ' tháng'
     : (month.slice(0, 4) === new Date().getFullYear().toString() ? 'Tháng ' + parseInt(month.slice(5)) : month));
+  // Nhịp tháng: xem trọn tháng hiện tại thì đến hôm nay chỉ nên tiêu tỷ lệ ngày đã qua. Chấm đen trên thanh.
+  const tNow = today();
+  let pacePct = null;
+  if (monthCount === 1 && fullMonth && !label && dailyRemain == null && month === tNow.slice(0, 7)) {
+    const day = parseInt(tNow.slice(8, 10), 10), dim = new Date(parseInt(month.slice(0, 4), 10), parseInt(month.slice(5, 7), 10), 0).getDate();
+    pacePct = day / dim * 100;
+  }
+  const paceAmt = pacePct != null ? Math.round(budget * pacePct / 100) : 0;
 
   const handleSave = () => {
     const inc = parseInt((incomeVal || '0').replace(/\D/g, '')) || 0;
@@ -732,10 +740,14 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
           </p>
         </div>
       </div>
-      <div class="h-2.5 rounded-full overflow-hidden" style="background:${dark ? '#334155' : '#f4f4f5'}">
-        <div class="h-full rounded-full transition-all duration-500"
-          style="width:${pct}%;background:${over ? '#ef4444' : warn ? '#f59e0b' : '#10b981'}" />
+      <div style="position:relative">
+        <div class="h-2.5 rounded-full overflow-hidden" style="background:${dark ? '#334155' : '#f4f4f5'}">
+          <div class="h-full rounded-full transition-all duration-500"
+            style="width:${pct}%;background:${over ? '#ef4444' : warn ? '#f59e0b' : '#10b981'}" />
+        </div>
+        ${pacePct != null && html`<div title="Nhịp: hôm nay ngày ${parseInt(tNow.slice(8, 10), 10)}, nên ở khoảng ${Math.round(pacePct)}% (${fmtShort(paceAmt)})" style="position:absolute;top:50%;left:${pacePct}%;width:12px;height:12px;border-radius:50%;background:#18181b;border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(0,0,0,.25)"></div>`}
       </div>
+      ${pacePct != null && html`<p class="text-xs" style="margin-top:6px;color:${total > paceAmt ? '#ef4444' : (dark ? '#94a3b8' : '#a1a1aa')};${total > paceAmt ? 'font-weight:600' : ''}">${total > paceAmt ? '\u{1F3C3} nhanh hơn nhịp ' + fmtShort(total - paceAmt) + ' (\u25CF ' + Math.round(pacePct) + '% · ' + fmtShort(paceAmt) + ')' : '\u25CF nhịp hôm nay ' + Math.round(pacePct) + '% · ' + fmtShort(paceAmt)}</p>`}
       ${weekGoal && (weekGoal.spend <= weekGoal.budget ? html`
         <div class="flex items-center justify-between mt-2 pt-2 gap-2" style="border-top:1px solid ${dark ? '#334155' : '#f4f4f5'}">
           <span class="text-xs truncate" style="color:${dark ? '#fbbf24' : '#b45309'}">\u{1F3C5} Dưới ngưỡng tuần còn ${fmtShort(weekGoal.budget - weekGoal.spend)} · giữ đến CN${weekGoal.streak > 0 ? ' · chuỗi ' + weekGoal.streak + ' tuần' : ''}</span>
