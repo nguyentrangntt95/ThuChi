@@ -413,6 +413,51 @@ function merchantKey(detail) {
   return null;
 }
 
+// Gom các khoản cùng thương hiệu hoặc cùng tên thành một nhóm (dùng cho Top 5 và insight "Khoản chi nhiều nhất").
+// Tên ngắn nuốt tên dài: có sẵn khoản "gội đầu" thì "gội đầu cắt tóc" gom vào đó. Chỉ gộp khi thật sự tồn tại
+// một khoản ghi đúng tên ngắn, tên ngắn ≥ 4 ký tự và khớp trọn từ, kẻo "xe" nuốt cả "sửa xe".
+function groupByName(list) {
+  const byName = {};
+  list.forEach(e => {
+    const raw = (e.detail || '').trim();
+    if (!raw) return;
+    const brand = merchantKey(raw);
+    const key = brand ? '@' + brand : stripAccents(raw.toLowerCase()).replace(/\s+/g, ' ');
+    if (!byName[key]) byName[key] = { label: brand || raw, total: 0, count: 0, cats: {}, items: [] };
+    const g = byName[key];
+    g.total += e.amount; g.count += 1; g.items.push(e);
+    g.cats[e.category] = (g.cats[e.category] || 0) + e.amount;
+  });
+  const isWordCh = ch => (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9');
+  const hasWhole = (hay, needle) => {
+    for (let i = hay.indexOf(needle); i !== -1; i = hay.indexOf(needle, i + 1)) {
+      const okBefore = i === 0 || !isWordCh(hay[i - 1]);
+      const okAfter = i + needle.length >= hay.length || !isWordCh(hay[i + needle.length]);
+      if (okBefore && okAfter) return true;
+    }
+    return false;
+  };
+  const plainKeys = Object.keys(byName).filter(k => k[0] !== '@').sort((a, b) => a.length - b.length);
+  plainKeys.forEach((longK, i) => {
+    for (let j = 0; j < i; j++) {
+      const shortK = plainKeys[j];
+      if (shortK.length < 4 || !byName[shortK] || !byName[longK]) continue;
+      if (!hasWhole(longK, shortK)) continue;
+      const src = byName[longK], dst = byName[shortK];
+      dst.total += src.total; dst.count += src.count; dst.items.push(...src.items);
+      Object.entries(src.cats).forEach(([c, v]) => { dst.cats[c] = (dst.cats[c] || 0) + v; });
+      delete byName[longK];
+      break;
+    }
+  });
+  return Object.values(byName).map(g => {
+    g.items.sort((a, b) => b.amount - a.amount);
+    g.topCat = Object.entries(g.cats).sort((a, b) => b[1] - a[1])[0][0];
+    g.label = g.label.charAt(0).toUpperCase() + g.label.slice(1);
+    return g;
+  }).sort((a, b) => b.total - a.total);
+}
+
 
 // Vietnamese names for display
 const CAT_NAMES = {food:'Ăn uống',transport:'Di chuyển',shopping:'Mua sắm',entertainment:'Giải trí',bills:'Hóa đơn',health:'Sức khỏe',education:'Học tập',beauty:'Làm đẹp',relationship:'Quan hệ',other:'Khác',savings:'Tiết kiệm'};
@@ -1137,10 +1182,13 @@ function CategoryTrendChart({ expenses, onFilter }) {
 }
 
 function TopExpenses({ expenses }) {
-  const top5 = useMemo(() =>
-    [...expenses].sort((a, b) => b.amount - a.amount).slice(0, 5),
-    [expenses]
-  );
+  // Gộp cùng thương hiệu / cùng tên (Shopee ×4, Yoga ×3...). Khoản không ghi tên đứng riêng từng khoản.
+  const top5 = useMemo(() => {
+    const groups = groupByName(expenses);
+    expenses.filter(e => !(e.detail || '').trim()).forEach(e => groups.push({ label: (catMap[e.category] || catMap.other).name, total: e.amount, count: 1, topCat: e.category, items: [e] }));
+    return groups.sort((a, b) => b.total - a.total).slice(0, 5);
+  }, [expenses]);
+  const [open, setOpen] = useState(null);
 
   if (top5.length === 0) return null;
 
@@ -1162,17 +1210,33 @@ function TopExpenses({ expenses }) {
     <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
       <h3 class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 mb-3">\u{1F3C6} Top 5 khoản lớn nhất</h3>
       <div class="space-y-1.5">
-        ${top5.map((e, i) => {
-          const cat = catMap[e.category] || catMap.other;
+        ${top5.map((g, i) => {
+          const cat = catMap[g.topCat] || catMap.other;
+          const first = g.items[0];
+          const dates = g.items.map(x => x.date).sort();
+          const when = g.count > 1 ? dates[0].slice(5) + ' → ' + dates[dates.length - 1].slice(5) : first.date.slice(5);
+          const isOpen = open === i;
           return html`
-            <div key=${e.id || i} class="flex items-center gap-2.5 py-1.5 cursor-pointer rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-700 px-1 transition-colors" onClick=${() => scrollToExpense(e)}>
-              <span class="text-xs font-bold text-zinc-300 dark:text-zinc-600 w-5 text-center">${i+1}</span>
-              <span class="text-base">${cat.emoji}</span>
-              <div class="flex-1 min-w-0">
-                <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate">${e.detail || cat.name}</p>
-                <p class="text-xs text-zinc-400">${e.date.slice(5)}</p>
+            <div key=${i}>
+              <div class="flex items-center gap-2.5 py-1.5 cursor-pointer rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-700 px-1 transition-colors" onClick=${() => g.count > 1 ? setOpen(isOpen ? null : i) : scrollToExpense(first)}>
+                <span class="text-xs font-bold text-zinc-300 dark:text-zinc-600 w-5 text-center">${i+1}</span>
+                <span class="text-base">${cat.emoji}</span>
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-medium text-zinc-700 dark:text-zinc-300 truncate">${g.label}${g.count > 1 ? html` <span class="text-zinc-400 font-normal">×${g.count}</span>` : ''}</p>
+                  <p class="text-xs text-zinc-400">${when}${g.count > 1 ? ' · TB ' + fmtShort(Math.round(g.total / g.count)) : ''}</p>
+                </div>
+                <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">${fmtShort(g.total)}</span>
+                ${g.count > 1 && html`<span class="text-xs text-zinc-400" style="width:10px">${isOpen ? '\u25BE' : '\u25B8'}</span>`}
               </div>
-              <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">${fmtShort(e.amount)}</span>
+              ${isOpen && html`
+                <div style="margin:0 0 4px 44px">
+                  ${g.items.slice(0, 8).map(e => html`
+                    <div key=${e.id} class="flex items-center justify-between text-xs py-1 cursor-pointer hover:underline" onClick=${() => scrollToExpense(e)}>
+                      <span class="text-zinc-500 dark:text-zinc-400 truncate">${e.date.slice(5)} · ${e.detail}</span>
+                      <span class="text-zinc-600 dark:text-zinc-300 shrink-0">${fmtShort(e.amount)}</span>
+                    </div>`)}
+                  ${g.items.length > 8 && html`<p class="text-xs text-zinc-400">… còn ${g.items.length - 8} khoản</p>`}
+                </div>`}
             </div>
           `;
         })}
@@ -1331,56 +1395,13 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
       result.push({ icon: '\u{1F525}', title: 'Ngày chi nhiều nhất', subtitle: d.getDate() + '/' + (d.getMonth()+1) + ' (' + dayNames[d.getDay()] + ') — ' + fmtShort(maxAmt), color: '#f97316' });
     }
 
-    // 2b. Biggest single things you spent on — same brand, or same name, counts as one
-    const byName = {};
-    spendingExpenses.forEach(e => {
-      const raw = (e.detail || '').trim();
-      if (!raw) return;
-      const brand = merchantKey(raw);
-      const key = brand ? '@' + brand : stripAccents(raw.toLowerCase()).replace(/\s+/g, ' ');
-      if (!byName[key]) byName[key] = { label: brand || raw, total: 0, count: 0, cats: {} };
-      const g = byName[key];
-      g.total += e.amount;
-      g.count += 1;
-      g.cats[e.category] = (g.cats[e.category] || 0) + e.amount;
-    });
-
-    // Tên ngắn nuốt tên dài: có sẵn khoản "gội đầu" thì "gội đầu cut tóc",
-    // "gội đầu + sấy" gom hết vào đó. Chỉ gộp khi thật sự tồn tại một khoản
-    // ghi đúng tên ngắn — "cơm tấm"/"cơm gà" vẫn tách nếu không có khoản "cơm".
-    // Chặn tên dưới 4 ký tự và bắt khớp trọn từ, kẻo "xe" nuốt cả "sửa xe".
-    const isWordCh = ch => (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9');
-    const hasWhole = (hay, needle) => {
-      for (let i = hay.indexOf(needle); i !== -1; i = hay.indexOf(needle, i + 1)) {
-        const okBefore = i === 0 || !isWordCh(hay[i - 1]);
-        const okAfter = i + needle.length >= hay.length || !isWordCh(hay[i + needle.length]);
-        if (okBefore && okAfter) return true;
-      }
-      return false;
-    };
-    const plainKeys = Object.keys(byName).filter(k => k[0] !== '@').sort((a, b) => a.length - b.length);
-    plainKeys.forEach((longK, i) => {
-      for (let j = 0; j < i; j++) {
-        const shortK = plainKeys[j];
-        if (shortK.length < 4 || !byName[shortK] || !byName[longK]) continue;
-        if (!hasWhole(longK, shortK)) continue;
-        const src = byName[longK], dst = byName[shortK];
-        dst.total += src.total;
-        dst.count += src.count;
-        Object.entries(src.cats).forEach(([c, v]) => { dst.cats[c] = (dst.cats[c] || 0) + v; });
-        delete byName[longK];
-        break;
-      }
-    });
-
-    const namedGroups = Object.values(byName).sort((a, b) => b.total - a.total);
+    // 2b. Khoản chi nhiều nhất theo thương hiệu / tên (cùng cách gộp với Top 5)
+    const namedGroups = groupByName(spendingExpenses);
     if (namedGroups.length > 0) {
       const lines = namedGroups.slice(0, 5).map(g => {
-        const topCat = Object.entries(g.cats).sort((a, b) => b[1] - a[1])[0][0];
-        const cat = catMap[topCat] || catMap.other;
+        const cat = catMap[g.topCat] || catMap.other;
         const pct = total > 0 ? Math.round(g.total / total * 100) : 0;
-        const label = g.label.charAt(0).toUpperCase() + g.label.slice(1);
-        return cat.emoji + ' ' + label + (g.count > 1 ? ' ×' + g.count : '')
+        return cat.emoji + ' ' + g.label + (g.count > 1 ? ' ×' + g.count : '')
           + ' — ' + fmtShort(g.total) + (pct >= 1 ? ' (' + pct + '%)' : '');
       });
       result.push({ icon: '\u{1F3F7}\u{FE0F}', title: 'Khoản chi nhiều nhất', subtitle: fmtShort(namedGroups[0].total), details: lines, color: '#8b5cf6' });
