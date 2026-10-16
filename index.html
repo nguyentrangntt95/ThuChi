@@ -458,6 +458,51 @@ function groupByName(list) {
   }).sort((a, b) => b.total - a.total);
 }
 
+// ── Khoản cố định hàng tháng: suy ra từ các tháng trước, không cần khai ──
+// Mỗi mục lấy MỨC THẤP NHẤT qua tối đa 3 tháng đã ghi gần nhất (mua sắm, làm đẹp không tính: không phải phí cố định).
+// Khoản lặp theo tên tháng nào cũng trả (subscription, tiền nhà...) cũng là cố định, kể cả khi nằm ở mục mua sắm.
+const FIXED_SKIP = new Set(['shopping', 'beauty', SAVINGS_CAT]);
+function fixedCosts(expenses, month) {
+  const byMonth = {};
+  expenses.forEach(e => {
+    if (e.category === SAVINGS_CAT || e.date.slice(0, 7) >= month) return;
+    const m = e.date.slice(0, 7); (byMonth[m] = byMonth[m] || []).push(e);
+  });
+  // Tháng "đã ghi": từ 8 khoản trở lên, tránh tháng mới dùng app nửa chừng kéo mức thấp nhất về 0
+  const months = Object.keys(byMonth).filter(m => byMonth[m].length >= 8).sort().slice(-3);
+  if (months.length < 2) return null;
+  const sumIn = (list, cat) => list.filter(e => e.category === cat).reduce((s, e) => s + e.amount, 0);
+  const byCat = {};
+  CATEGORIES.forEach(c => { if (!FIXED_SKIP.has(c.id)) byCat[c.id] = Math.min(...months.map(m => sumIn(byMonth[m], c.id))); });
+  // Khoản lặp: cùng tên/thương hiệu, có mặt ở MỌI tháng xét, trả 1-2 lần/tháng, tháng ít nhất ≥ 70% tháng nhiều nhất
+  const recurring = [];
+  groupByName(months.flatMap(m => byMonth[m])).forEach(g => {
+    if (g.count > months.length * 2) return;
+    const per = months.map(m => g.items.filter(e => e.date.slice(0, 7) === m).reduce((s, e) => s + e.amount, 0));
+    const lo = Math.min(...per), hi = Math.max(...per);
+    if (lo <= 0 || lo < hi * (FIXED_SKIP.has(g.topCat) ? 0.9 : 0.7)) return;
+    recurring.push({ label: g.label, cat: g.topCat, amount: lo });
+  });
+  const recByCat = {};
+  recurring.forEach(r => { recByCat[r.cat] = (recByCat[r.cat] || 0) + r.amount; });
+  Object.keys(recByCat).forEach(c => { byCat[c] = Math.max(byCat[c] || 0, recByCat[c]); });
+  Object.keys(byCat).forEach(c => { if (!byCat[c]) delete byCat[c]; });
+  const total = Object.values(byCat).reduce((s, v) => s + v, 0);
+  return { byCat, total, recurring: recurring.sort((a, b) => b.amount - a.amount), months };
+}
+
+// Tách mỗi khoản tháng này thành phần "cố định" (trong định mức của mục, theo thứ tự ngày) và phần tuỳ ý.
+// Trả về map id -> tiền tuỳ ý, và phần cố định chưa tới (phải chừa lại).
+function discretionaryOf(expenses, month, fixed) {
+  const disc = {};
+  const left = { ...(fixed ? fixed.byCat : {}) };
+  expenses.filter(e => e.date.slice(0, 7) === month && e.category !== SAVINGS_CAT)
+    .sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0)
+    .forEach(e => { const f = Math.min(e.amount, left[e.category] || 0); if (f > 0) left[e.category] -= f; disc[e.id] = e.amount - f; });
+  const reserved = Object.values(left).reduce((s, v) => s + v, 0);
+  return { disc, left, reserved };
+}
+
 
 // Vietnamese names for display
 const CAT_NAMES = {food:'Ăn uống',transport:'Di chuyển',shopping:'Mua sắm',entertainment:'Giải trí',bills:'Hóa đơn',health:'Sức khỏe',education:'Học tập',beauty:'Làm đẹp',relationship:'Quan hệ',other:'Khác',savings:'Tiết kiệm'};
@@ -704,7 +749,7 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo, expenses = [] }) 
   `;
 }
 
-function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true, savings = 0, income: propIncome = 0, savingsTarget: propSavingsTarget = 0, dailyRemain = null, label = null, weekGoal = null }) {
+function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true, savings = 0, income: propIncome = 0, savingsTarget: propSavingsTarget = 0, dailyRemain = null, label = null, weekGoal = null, fixed = null, onOpenFixed = null }) {
   const budget = rawBudget || 15000000;
   const [editing, setEditing] = useState(false);
   const [incomeVal, setIncomeVal] = useState('');
@@ -793,6 +838,7 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
         ${pacePct != null && html`<div title="Nhịp: hôm nay ngày ${parseInt(tNow.slice(8, 10), 10)}, nên ở khoảng ${Math.round(pacePct)}% (${fmtShort(paceAmt)})" style="position:absolute;top:50%;left:${pacePct}%;width:12px;height:12px;border-radius:50%;background:#18181b;border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(0,0,0,.25)"></div>`}
       </div>
       ${pacePct != null && html`<p class="text-xs" style="margin-top:6px;color:${total > paceAmt ? '#ef4444' : (dark ? '#94a3b8' : '#a1a1aa')};${total > paceAmt ? 'font-weight:600' : ''}">${total > paceAmt ? '\u{1F3C3} nhanh hơn nhịp ' + fmtShort(total - paceAmt) + ' (\u25CF ' + Math.round(pacePct) + '% · ' + fmtShort(paceAmt) + ')' : '\u25CF nhịp hôm nay ' + Math.round(pacePct) + '% · ' + fmtShort(paceAmt)}</p>`}
+      ${dailyRemain != null && fixed && fixed.total > 0 && html`<p class="text-xs" onClick=${onOpenFixed} style="margin-top:6px;color:${dark ? '#94a3b8' : '#a1a1aa'};cursor:pointer" title="Cố định ${fmtShort(fixed.total)}/tháng (mức thấp nhất T${fixed.months.map(m => parseInt(m.slice(5), 10)).join(', T')}), đã trừ trước khi chia tiền tuỳ ý mỗi ngày">\u{1F4CC} Chừa cố định ${fmtShort(fixed.reserved)} chưa tới · ${fmtShort(fixed.total)}/tháng${fixed.recurring.length ? ' · ' + fixed.recurring.slice(0, 2).map(r => r.label).join(', ') : ''}</p>`}
       ${weekGoal && (weekGoal.spend <= weekGoal.budget ? html`
         <div class="flex items-center justify-between mt-2 pt-2 gap-2" style="border-top:1px solid ${dark ? '#334155' : '#f4f4f5'}">
           <span class="text-xs truncate" style="color:${dark ? '#fbbf24' : '#b45309'}">\u{1F3C5} Dưới ngưỡng tuần còn ${fmtShort(weekGoal.budget - weekGoal.spend)} · giữ đến CN${weekGoal.streak > 0 ? ' · chuỗi ' + weekGoal.streak + ' tuần' : ''}</span>
@@ -2294,7 +2340,7 @@ function FinanceModal({ finance, onSave, onClose, dark, avgSpend }) {
   `;
 }
 
-function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month }) {
+function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month, fixed = null }) {
   const [vals, setVals] = useState(() => Object.fromEntries(CATEGORIES.filter(c => c.id !== SAVINGS_CAT).map(c => [c.id, catLimits[c.id] || 0])));
   const sum = Object.values(vals).reduce((s, v) => s + (parseFloat(v) || 0), 0);
   const buffer = Math.round((100 - sum) * 10) / 10;
@@ -2323,6 +2369,12 @@ function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month }) {
           <span class="text-sm" style="color:${sum > 100 ? '#ef4444' : mut}">Tổng ${Math.round(sum * 10) / 10}% · Dự phòng ${buffer}%</span>
           <span class="text-sm font-semibold" style="color:${sum > 100 ? '#ef4444' : fg}">${fmtShort(Math.round(monthBudget * Math.max(0, 100 - sum) / 100))}</span>
         </div>
+        ${fixed && fixed.total > 0 && html`
+          <div class="text-xs" style="margin-top:12px;padding:10px 12px;border-radius:12px;background:${dark ? '#0f172a' : '#fafafa'};color:${mut};line-height:1.6">
+            <p style="color:${fg}"><b>\u{1F4CC} Cố định ${fmtShort(fixed.total)}/tháng</b> · mức thấp nhất T${fixed.months.map(m => parseInt(m.slice(5), 10)).join(', T')}, chừa trước khi chia tiền tuỳ ý</p>
+            <p>${Object.entries(fixed.byCat).sort((a, b) => b[1] - a[1]).map(([c, v]) => (catMap[c] || catMap.other).emoji + ' ' + fmtShort(v)).join(' · ')}</p>
+            ${fixed.recurring.length > 0 && html`<p>Lặp mỗi tháng: ${fixed.recurring.slice(0, 6).map(r => r.label + ' ' + fmtShort(r.amount)).join(' · ')}</p>`}
+          </div>`}
         <p class="text-xs" style="color:${mut};margin-top:10px;line-height:1.5">⚖️ Mua sắm và Làm đẹp có phạt từ T${parseInt(PENALTY_START.slice(5), 10)}/${PENALTY_START.slice(0, 4)}: dưới trần thì ${BONUS_RATE * 100}% phần dư được cộng vào trần tháng sau (nhịn vài tháng để dồn cho đợt sale); vượt hạn mức thì TOÀN BỘ phần lố bị trừ vào hạn mức tháng sau (trừ chưa hết thì dồn tiếp), và nộp thêm vào Tiết kiệm theo bậc: lố ≤10% trần nộp 20%, ≤30% nộp 30%, ≤50% nộp 40%, sâu hơn nộp 50% phần lố (tối thiểu ${fmtShort(PENALTY_MIN)}, không có trần). App tự ghi khoản đó ngày đầu tháng. Điểm ⭐ check-in đổi được: ${fmt(REWARD_QUOTA.pts)} điểm = +${fmtShort(REWARD_QUOTA.amount)} trần Mua sắm/Làm đẹp, ${fmt(REWARD_FINE.pts)} điểm = giảm ${REWARD_FINE.pct}% tiền phạt (bấm vào ⭐ trên đầu trang). Tuần nào tiêu không hết ngân sách tuần thì được +${WEEK_WIN.pts} điểm trở lên và ${WEEK_WIN.rate * 100}% phần dư nới trần Mua sắm/Làm đẹp.</p>
         <button onClick=${() => { if (sum <= 100) onSave(Object.fromEntries(Object.entries(vals).map(([k, v]) => [k, parseFloat(v) || 0]))); }}
           disabled=${sum > 100}
@@ -3589,6 +3641,10 @@ function App() {
     mBudget = Math.max(0, mBudget - finesFor(penalties, m));
     const monthSpent = expenses.filter(e => e.date.slice(0, 7) === m && e.category !== SAVINGS_CAT).reduce((s, e) => s + e.amount, 0);
     const monthSavings = expenses.filter(e => e.date.slice(0, 7) === m && e.category === SAVINGS_CAT).reduce((s, e) => s + e.amount, 0);
+    // Cố định (suy từ các tháng trước) được chừa trước; các tuần/ngày chỉ chia phần tuỳ ý
+    const fixed = fixedCosts(expenses, m);
+    const { disc, reserved } = discretionaryOf(expenses, m, fixed);
+    const fixedTotal = fixed ? fixed.total : 0;
 
     // Cuốn chiếu 2 tầng theo TUẦN LỊCH (Thứ 2 -> CN): tháng -> tuần -> ngày trong tuần
     // Tuần hiện tại: budget = (ngân sách tháng - đã chi các tuần trước) / số tuần còn lại
@@ -3596,21 +3652,22 @@ function App() {
     const pad = n => String(n).padStart(2, '0');
     const y = parseInt(m.slice(0, 4), 10), mo = parseInt(m.slice(5), 10);
     const lastDay = new Date(y, mo, 0).getDate();
-    const spendDays = (s, e) => expenses.filter(x => x.date >= `${m}-${pad(s)}` && x.date <= `${m}-${pad(e)}` && x.category !== SAVINGS_CAT).reduce((a, x) => a + x.amount, 0);
+    const spendDays = (s, e) => expenses.filter(x => x.date >= `${m}-${pad(s)}` && x.date <= `${m}-${pad(e)}` && x.category !== SAVINGS_CAT).reduce((a, x) => a + (disc[x.id] != null ? disc[x.id] : x.amount), 0);
     // Chia tháng thành các tuần theo mốc Thứ 2 (tuần đầu/cuối có thể ngắn hơn 7 ngày)
     const segs = []; let segStart = 1;
     for (let d = 2; d <= lastDay; d++) { if (new Date(y, mo - 1, d).getDay() === 1) { segs.push([segStart, d - 1]); segStart = d; } }
     segs.push([segStart, lastDay]);
     const todayDate = parseInt(t.slice(8, 10), 10);
     const wIdx = Math.max(0, segs.findIndex(([s, e]) => todayDate >= s && todayDate <= e));
-    let weekRemainBudget = mBudget;
+    let weekRemainBudget = mBudget - fixedTotal;
     for (let i = 0; i < wIdx; i++) weekRemainBudget -= spendDays(segs[i][0], segs[i][1]);
     const weekBudget = weekRemainBudget / (segs.length - wIdx);
     const [wStart, wEnd] = segs[wIdx];
     const weekSpentSoFar = spendDays(wStart, Math.min(todayDate, wEnd)); // gồm cả hôm nay
     const daysLeftInWeek = Math.max(1, wEnd - todayDate + 1);
     const dailyRemain = (weekBudget - weekSpentSoFar) / daysLeftInWeek;
-    return { month: m, monthBudget: mBudget, monthSpent, monthSavings, dailyRemain, weekBudget, income, savings_target };
+    return { month: m, monthBudget: mBudget, monthSpent, monthSavings, dailyRemain, weekBudget, income, savings_target,
+      fixed: fixed ? { total: fixedTotal, reserved, byCat: fixed.byCat, recurring: fixed.recurring, months: fixed.months } : null };
   }, [dateFrom, dateTo, budgets, expenses, penalties]);
 
   // Week-budget mode: cho filter "Tuần X" (Thứ 2 -> CN) của tháng hiện tại.
@@ -3641,6 +3698,9 @@ function App() {
     return { weekNum: idx + 1, weekBudget, weekSpend, weekSavings, month: m };
   }, [dateFrom, dateTo, budgets, expenses, penalties]);
 
+  // Cố định của tháng đang xem, cho bảng hạn mức
+  const limitsFixed = useMemo(() => showLimits ? fixedCosts(expenses, budgetMonth) : null, [showLimits, expenses, budgetMonth]);
+
   // Mục tiêu thưởng tuần đang chạy (chỉ hiện ở chế độ Hôm nay / Tuần này)
   const weekGoal = useMemo(() => dailyInfo ? weekGoalInfo(expenses, budgets, penalties, today()) : null, [dailyInfo, expenses, budgets, penalties]);
 
@@ -3654,6 +3714,7 @@ function App() {
     monthCount: budgetInfo.months, fullMonth: budgetInfo.fullMonth, savings: rangeSavings,
     income: budgetInfo.income, savingsTarget: budgetInfo.savings_target,
     dailyRemain: dailyInfo ? dailyInfo.dailyRemain : null, label: null,
+    fixed: dailyInfo ? dailyInfo.fixed : null,
   };
 
   const addExpense = async (data) => {
@@ -3784,12 +3845,12 @@ function App() {
 
       ${checkinReward && html`<${CheckinModal} reward=${checkinReward} dark=${dark} onClose=${() => setCheckinReward(null)} />`}
       ${showRewards && html`<${RewardsModal} checkins=${checkins} rewards=${rewards} penalties=${penalties} catLimits=${catLimits} budgets=${budgets} dark=${dark} onRedeem=${redeemReward} onClose=${() => setShowRewards(false)} />`}
-      ${showLimits && html`<${LimitsModal} catLimits=${catLimits} onSave=${saveLimits} onClose=${() => setShowLimits(false)} dark=${dark} month=${budgetMonth} monthBudget=${budgetAmountOf(budgets, budgetMonth, penalties)} />`}
+      ${showLimits && html`<${LimitsModal} catLimits=${catLimits} onSave=${saveLimits} onClose=${() => setShowLimits(false)} dark=${dark} month=${budgetMonth} monthBudget=${budgetAmountOf(budgets, budgetMonth, penalties)} fixed=${limitsFixed} />`}
       ${showFinance && html`<${FinanceModal} finance=${finance} dark=${dark} avgSpend=${budgetAmountOf(budgets, budgetMonth, penalties)} onClose=${() => setShowFinance(false)}
         onSave=${async (f) => { setFinance(f); setShowFinance(false); await apiCall('/api/settings', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ finance: f }) }); }} />`}
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} expenses=${expenses} />
-        <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} weekGoal=${weekGoal} />
+        <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} weekGoal=${weekGoal} fixed=${budgetBarProps.fixed || null} onOpenFixed=${() => setShowLimits(true)} />
         ${visibleDups.length > 0 && html`
           <div class="px-4 mt-3 space-y-2">
             ${visibleDups.map(group => {
@@ -3832,9 +3893,13 @@ function App() {
               placeholder="Tìm kiếm chi tiêu..."
               class="w-full pl-9 pr-8 py-2 rounded-lg border border-zinc-200 dark:border-zinc-600 bg-white dark:bg-zinc-700 text-zinc-800 dark:text-zinc-200 text-sm placeholder:text-zinc-400 focus:outline-none focus:ring-1 focus:ring-emerald-500" />
             ${searchQuery && html`
-              <button onClick=${() => setSearchQuery('')} class="absolute right-2 top-1/2 text-zinc-400 hover:text-zinc-600 text-sm" style="transform:translateY(-50%)">\u00D7</button>
+              <button onClick=${() => setSearchQuery('')} class="absolute text-zinc-400 hover:text-zinc-600 text-sm" style="right:10px;top:50%;transform:translateY(-50%)">\u00D7</button>
             `}
           </div>
+          ${searchQuery.trim() && html`
+            <p class="text-xs mt-1.5 text-zinc-500 dark:text-zinc-400">
+              "${searchQuery.trim()}": ${filtered.length} khoản · tổng <span class="font-semibold text-zinc-800 dark:text-zinc-200">${fmt(filtered.reduce((s, e) => s + e.amount, 0))}đ</span>
+            </p>`}
         </div>
 
         <div class="px-4 mt-3 flex gap-2 overflow-x-auto pb-1 scrollbar-none">
