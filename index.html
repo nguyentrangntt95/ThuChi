@@ -1928,37 +1928,36 @@ function JarCard({ jar, penalties, rewards, challenge, expenses, onSaveJar, onOp
           </div>
           <div class="flex gap-2"><button onClick=${saveJar} class="text-xs font-semibold text-white" style="padding:5px 14px;border-radius:8px;background:#10b981;border:none">Lưu</button><button onClick=${() => setEdit(false)} class="text-xs text-zinc-500 dark:text-zinc-400" style="padding:5px 10px;border-radius:8px;background:rgba(128,128,128,0.12);border:none">Hủy</button></div>
         </div>` : html`
-        <div class="flex items-center gap-3">
-          <div style="font-size:26px;line-height:1">${jar.emoji}</div>
-          <div onClick=${openEdit} class="flex-1 min-w-0" style="cursor:pointer" title="Đặt tên / đích cho hũ">
-            <div class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">${jar.name} <span class="text-xs text-zinc-400 font-normal">\u270E</span></div>
-            <div class="flex items-baseline gap-1.5"><span class="text-lg font-bold leading-tight" style="color:#0d9488">${fmtShort(fines)}</span><span class="text-xs text-zinc-500 dark:text-zinc-400">${jar.target > 0 ? '/ ' + fmtShort(jar.target) : 'phạt đã nộp'}</span></div>
-          </div>
-          <button onClick=${onOpenRewards} class="text-right shrink-0" style="background:none;border:none;padding:0">
-            <div class="text-sm font-bold" style="color:#b45309">\u{1F3C5} ${fmtShort(rew)}</div>
-            <div class="text-xs" style="color:${pending ? '#b45309' : '#a1a1aa'}">${pending ? pending + ' chờ chọn \u203A' : 'thưởng \u203A'}</div>
-          </button>
+        <div onClick=${openEdit} class="flex items-center gap-2.5" style="cursor:pointer" title="Đặt tên / đích cho hũ">
+          <span style="font-size:22px;line-height:1">${jar.emoji}</span>
+          <span class="flex-1 min-w-0 text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">${jar.name}</span>
+          <span class="text-sm font-bold shrink-0" style="color:#0d9488">${fmtShort(fines)}${jar.target > 0 && html` <span class="text-xs text-zinc-400 font-normal">/ ${fmtShort(jar.target)}</span>`}</span>
         </div>
-        ${jar.target > 0 && html`<div class="h-1.5 rounded-full overflow-hidden mt-2" style="background:rgba(128,128,128,0.15)"><div class="h-full rounded-full" style="width:${pct}%;background:#14b8a6;transition:width .6s"></div></div>`}
+        ${jar.target > 0 && html`<div class="rounded-full overflow-hidden" style="height:4px;margin-top:8px;background:rgba(128,128,128,0.15)"><div class="h-full rounded-full" style="width:${pct}%;background:#14b8a6;transition:width .6s"></div></div>`}
       `}
-      ${ledger.length > 0 && html`
-        <div style="margin-top:8px;padding-top:4px;${line}">
-          ${shown.map(e => html`
-            <div key=${e.id} class="flex items-center justify-between gap-2 text-xs" style="padding:4px 0">
+      <div class="flex items-center justify-between gap-2 text-xs" style="margin-top:8px">
+        <button onClick=${onOpenRewards} class="text-zinc-500 dark:text-zinc-400 truncate" style="background:none;border:none;padding:0;text-align:left">
+          \u{1F3C5} Thưởng ${fmtShort(rew)}${pending ? html` · <span class="font-semibold" style="color:#b45309">${pending} chờ chọn</span>` : ''} \u203A
+        </button>
+        ${ledger.length > 0 && html`<button onClick=${() => setMore(!more)} class="text-zinc-400 shrink-0" style="background:none;border:none;padding:0">Lịch sử ${ledger.length} ${more ? '\u25BE' : '\u203A'}</button>`}
+      </div>
+      ${more && html`
+        <div style="margin-top:6px;padding-top:4px;${line}">
+          ${ledger.map(e => html`
+            <div key=${e.id} class="flex items-center justify-between gap-2 text-xs" style="padding:3px 0">
               <span class="text-zinc-600 dark:text-zinc-300 truncate"><span class="text-zinc-400">${fmtDM(e.day)}</span> ${e.label}</span>
-              ${e.pending ? html`<button onClick=${onOpenRewards} class="font-semibold shrink-0" style="color:#b45309;background:rgba(245,158,11,0.14);border:none;border-radius:6px;padding:1px 7px">+${fmtShort(e.amount)} chọn</button>`
+              ${e.pending ? html`<button onClick=${onOpenRewards} class="font-semibold shrink-0" style="color:#b45309;background:none;border:none;padding:0">+${fmtShort(e.amount)} chọn \u203A</button>`
               : e.amount !== 0 ? html`<span class="font-semibold shrink-0" style="color:${e.amount < 0 ? '#ef4444' : '#16a34a'}">${e.amount < 0 ? '\u2212' : '+'}${fmtShort(Math.abs(e.amount))}</span>`
               : html`<span class="font-semibold shrink-0" style="color:${e.kind === 'win' ? '#16a34a' : '#ef4444'}">${e.kind === 'win' ? '+' + e.pts + '\u2B50' : '\u2717'}</span>`}
             </div>`)}
-          ${ledger.length > 3 && html`<button onClick=${() => setMore(!more)} class="text-xs text-zinc-400" style="background:none;border:none;padding:2px 0">${more ? 'Thu gọn' : 'Xem thêm ' + (ledger.length - 3) + ' \u203A'}</button>`}
         </div>`}
       <div class="flex items-center justify-between gap-2 text-xs" style="margin-top:8px;padding-top:8px;${line}" title=${catsNote}>
         ${cs ? html`
-          <span class="text-zinc-700 dark:text-zinc-300 truncate">\u{1F3AF} ${cs.soon ? 'Từ mai' : 'Ngày ' + cs.dayNo + '/' + CHALLENGE.days} không tiêu linh tinh · đến ${fmtDM(cs.end)} \u2192 +${CHALLENGE.pts}\u2B50</span>
-          <div class="flex gap-1 shrink-0">${cs.days.map(d => html`<span key=${d.d} title=${d.d} style="width:12px;height:12px;border-radius:50%;background:${d.state === 'clean' ? '#22c55e' : d.state === 'fail' ? '#ef4444' : d.state === 'today' ? '#a855f7' : 'rgba(128,128,128,0.2)'}"></span>`)}</div>
+          <span class="text-zinc-600 dark:text-zinc-300 truncate">\u{1F3AF} ${cs.soon ? 'Từ mai' : 'Ngày ' + cs.dayNo + '/' + CHALLENGE.days} không tiêu linh tinh · +${CHALLENGE.pts}\u2B50</span>
+          <div class="flex gap-1 shrink-0">${cs.days.map(d => html`<span key=${d.d} title=${d.d} style="width:8px;height:8px;border-radius:50%;background:${d.state === 'clean' ? '#22c55e' : d.state === 'fail' ? '#ef4444' : d.state === 'today' ? '#14b8a6' : 'rgba(128,128,128,0.25)'}"></span>`)}</div>
         ` : html`
-          <span class="text-zinc-700 dark:text-zinc-300 truncate">\u{1F3AF} ${showLast ? (lastCh.result === 'win' ? 'Thử thách xong, +' + (-lastCh.pts) + '\u2B50. Làm lại?' : 'Thử thách đứt ' + fmtDM(lastCh.failDay || lastCh.day) + '. Thử lại?') : CHALLENGE.days + ' ngày không tiêu linh tinh \u2192 +' + CHALLENGE.pts + '\u2B50'}</span>
-          <button onClick=${onStartChallenge} class="font-semibold shrink-0" style="padding:4px 10px;border-radius:8px;color:#fff;background:#a855f7;border:none;font-size:12px">Bắt đầu</button>
+          <span class="text-zinc-500 dark:text-zinc-400 truncate">\u{1F3AF} ${showLast ? (lastCh.result === 'win' ? 'Thử thách xong +' + (-lastCh.pts) + '\u2B50' : 'Thử thách đứt ' + fmtDM(lastCh.failDay || lastCh.day)) : CHALLENGE.days + ' ngày không tiêu linh tinh · +' + CHALLENGE.pts + '\u2B50'}</span>
+          <button onClick=${onStartChallenge} class="font-semibold shrink-0" style="background:none;border:none;padding:0;color:#0d9488">${showLast ? 'Làm lại' : 'Bắt đầu'} \u203A</button>
         `}
       </div>
     </div>
