@@ -668,9 +668,8 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo, expenses = [] }) 
   const presets = [
     { label: 'Hôm nay', fn: () => { const t = today(); onChangeFrom(t); onChangeTo(t); } },
     { label: 'Tuần này', fn: () => {
-      const d = new Date(); const day = d.getDay() || 7;
-      d.setDate(d.getDate() - day + 1);
-      onChangeFrom(d.toISOString().slice(0,10)); onChangeTo(today());
+      const t = today(); const r = curWeeks.find(([f, to]) => t >= f && t <= to) || [t, t];
+      onChangeFrom(r[0]); onChangeTo(r[1]);
     }},
     { label: 'Tháng này', fn: () => {
       const t = today(); onChangeFrom(t.slice(0,8) + '01'); onChangeTo(t);
@@ -749,7 +748,7 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo, expenses = [] }) 
   `;
 }
 
-function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true, savings = 0, income: propIncome = 0, savingsTarget: propSavingsTarget = 0, dailyRemain = null, label = null, weekGoal = null, fixed = null, onOpenFixed = null }) {
+function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true, savings = 0, income: propIncome = 0, savingsTarget: propSavingsTarget = 0, dailyRemain = null, label = null, weekGoal = null, fixed = null, onOpenFixed = null, rangeFrom = null, rangeTo = null }) {
   const budget = rawBudget || 15000000;
   const [editing, setEditing] = useState(false);
   const [incomeVal, setIncomeVal] = useState('');
@@ -761,12 +760,18 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
   const monthLabel = label || (monthCount > 1
     ? monthCount + ' tháng'
     : (month.slice(0, 4) === new Date().getFullYear().toString() ? 'Tháng ' + parseInt(month.slice(5)) : month));
-  // Nhịp tháng: xem trọn tháng hiện tại thì đến hôm nay chỉ nên tiêu tỷ lệ ngày đã qua. Chấm đen trên thanh.
+  // Nhịp: khoảng đang xem (tháng, tuần, ngày, tuỳ chọn) đã trôi bao nhiêu phần, chấm đen trên thanh.
+  // Khoảng nhiều ngày: đếm trọn ngày hôm nay (ngày 15/30 = 50%). Khoảng một ngày: theo giờ trong ngày.
   const tNow = today();
   let pacePct = null;
-  if (monthCount === 1 && fullMonth && !label && dailyRemain == null && month === tNow.slice(0, 7)) {
-    const day = parseInt(tNow.slice(8, 10), 10), dim = new Date(parseInt(month.slice(0, 4), 10), parseInt(month.slice(5, 7), 10), 0).getDate();
-    pacePct = day / dim * 100;
+  const rangeEnd = (rangeTo && fullMonth && monthCount === 1 && !label && rangeTo.slice(0, 7) === month)
+    ? month + '-' + String(new Date(parseInt(month.slice(0, 4), 10), parseInt(month.slice(5, 7), 10), 0).getDate()).padStart(2, '0') : rangeTo;
+  if (rangeFrom && rangeEnd && tNow >= rangeFrom && tNow <= rangeEnd) {
+    const dayDiff = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
+    const days = dayDiff(rangeFrom, rangeEnd) + 1;
+    if (days === 1) { const n = new Date(); pacePct = (n.getHours() + n.getMinutes() / 60) / 24 * 100; }
+    else pacePct = (dayDiff(rangeFrom, tNow) + 1) / days * 100;
+    pacePct = Math.max(0, Math.min(100, pacePct));
   }
   const paceAmt = pacePct != null ? Math.round(budget * pacePct / 100) : 0;
 
@@ -780,21 +785,28 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
   const inputStyle = "w-full px-3 py-2 text-sm rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500";
   const inputBorder = "background:" + (dark ? '#0f172a' : '#fff') + ";border:1px solid " + (dark ? '#475569' : '#d4d4d8') + ";color:" + (dark ? '#e2e8f0' : '#27272a');
 
+  const mut = dark ? '#94a3b8' : '#a1a1aa', sep = dark ? '#334155' : '#f4f4f5';
+  const canEdit = monthCount <= 1 && fullMonth;
+  const openEdit = () => { setIncomeVal(propIncome > 0 ? propIncome.toString() : ''); setSavingsVal(propSavingsTarget > 0 ? propSavingsTarget.toString() : ''); setEditing(true); };
+  const fast = pacePct != null && total > paceAmt;
+  // Dòng phụ gom nhịp, cố định, tiết kiệm vào một hàng, chỉ hiện cái nào có
+  const meta = [];
+  if (pacePct != null) meta.push(html`<span title="Đã qua ${Math.round(pacePct)}% khoảng thời gian, nên tiêu khoảng ${fmtShort(paceAmt)}" style="color:${fast ? '#ef4444' : mut};${fast ? 'font-weight:600' : ''}">${fast ? '\u{1F3C3} nhanh hơn nhịp ' + fmtShort(total - paceAmt) : '\u25CF nhịp ' + Math.round(pacePct) + '%'}</span>`);
+  if (dailyRemain != null && fixed && fixed.total > 0) meta.push(html`<span onClick=${onOpenFixed} style="cursor:pointer" title="Cố định ${fmtShort(fixed.total)}/tháng (mức thấp nhất T${fixed.months.map(m => parseInt(m.slice(5), 10)).join(', T')}), đã trừ trước khi chia tiền mỗi ngày. Bấm để xem.">\u{1F4CC} cố định ${fmtShort(fixed.reserved)} chưa tới</span>`);
+  if (savings > 0 || (propSavingsTarget > 0 && fullMonth && dailyRemain == null)) meta.push(html`<span style="color:${dark ? '#5eead4' : '#0d9488'}">\u{1F4B0} ${fmtShort(savings)}${propSavingsTarget > 0 ? ' / ' + fmtShort(propSavingsTarget) : ''}</span>`);
+
   return html`
     <div class="mx-4 mt-3 p-4 rounded-xl" style="background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#334155' : '#e4e4e7'}">
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-sm font-semibold" style="color:${dark ? '#f1f5f9' : '#27272a'}">${monthLabel}</span>
-        ${!editing ? html`
-          ${monthCount <= 1 && fullMonth && html`<button onClick=${() => { setIncomeVal(propIncome > 0 ? propIncome.toString() : ''); setSavingsVal(propSavingsTarget > 0 ? propSavingsTarget.toString() : ''); setEditing(true); }}
-            class="text-xs px-2.5 py-1 rounded-lg hover:opacity-80 transition-colors"
-            style="background:${dark ? '#334155' : '#f4f4f5'};color:${dark ? '#94a3b8' : '#71717a'}">
-            Sửa thu nhập
-          </button>`}
-        ` : html`
+      <div class="flex items-center justify-between">
+        ${editing ? html`
+          <span class="text-sm font-semibold" style="color:${dark ? '#f1f5f9' : '#27272a'}">${monthLabel}</span>
           <div class="flex items-center gap-1.5">
             <button onClick=${handleSave} class="text-xs font-medium px-2.5 py-1 rounded-lg" style="color:#10b981">Lưu</button>
-            <button onClick=${() => setEditing(false)} class="text-xs px-2 py-1" style="color:${dark ? '#94a3b8' : '#a1a1aa'}">Hủy</button>
+            <button onClick=${() => setEditing(false)} class="text-xs px-2 py-1" style="color:${mut}">Hủy</button>
           </div>
+        ` : html`
+          <button onClick=${canEdit ? openEdit : null} class="text-sm font-semibold" title=${canEdit ? 'Sửa thu nhập / tiết kiệm' : ''} style="background:none;border:none;padding:0;color:${dark ? '#f1f5f9' : '#27272a'};cursor:${canEdit ? 'pointer' : 'default'}">${monthLabel}${canEdit ? html` <span style="font-size:11px;font-weight:400;color:${mut}">\u270E</span>` : ''}</button>
+          <span class="text-sm font-bold" style="color:${over ? '#ef4444' : '#10b981'}">${Math.round(pct)}%</span>
         `}
       </div>
       ${editing && html`
@@ -816,44 +828,31 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
           `}
         </div>
       `}
-      <div class="flex items-end justify-between mb-2">
-        <div>
-          <p class="text-2xl font-bold tracking-tight" style="color:${over ? '#ef4444' : dark ? '#f1f5f9' : '#18181b'}">${fmt(total)}đ</p>
-          <p class="text-xs mt-0.5" style="color:${dark ? '#64748b' : '#a1a1aa'}">/ ${fmt(budget)}đ${propIncome > 0 ? ' (lương ' + fmtShort(propIncome) + ')' : monthCount > 1 ? ' (' + monthCount + ' tháng)' : (!rawBudget ? ' (mặc định)' : '')}</p>
-        </div>
-        <div class="text-right">
-          <p class="text-lg font-bold" style="color:${over ? '#ef4444' : '#10b981'}">${Math.round(pct)}%</p>
-          <p class="text-xs" style="color:${(dailyRemain != null ? dailyRemain < 0 : over) ? '#f87171' : '#10b981'}">
-            ${dailyRemain != null
-              ? (dailyRemain >= 0 ? 'Còn ' + fmtShort(dailyRemain) + '/ngày' : '⚠ Hết quota')
-              : (over ? '⚠ Hết quota · vượt ' + fmtShort(total - budget) : 'Còn ' + fmtShort(remain))}
-          </p>
-        </div>
+      <div class="flex items-end justify-between gap-2" style="margin-top:4px">
+        <p class="text-2xl font-bold tracking-tight" style="color:${over ? '#ef4444' : dark ? '#f1f5f9' : '#18181b'}">${fmt(total)}đ <span class="text-xs font-normal" style="color:${mut}">/ ${fmtShort(budget)}${propIncome > 0 ? ' · lương ' + fmtShort(propIncome) : !rawBudget ? ' · mặc định' : ''}</span></p>
+        <p class="text-xs font-semibold shrink-0" style="color:${(dailyRemain != null ? dailyRemain < 0 : over) ? '#f87171' : '#10b981'}">
+          ${dailyRemain != null
+            ? (dailyRemain >= 0 ? 'Còn ' + fmtShort(dailyRemain) + '/ngày' : '⚠ Hết quota')
+            : (over ? '⚠ Vượt ' + fmtShort(total - budget) : 'Còn ' + fmtShort(remain))}
+        </p>
       </div>
-      <div style="position:relative">
-        <div class="h-2.5 rounded-full overflow-hidden" style="background:${dark ? '#334155' : '#f4f4f5'}">
+      <div style="position:relative;margin-top:8px">
+        <div class="h-2.5 rounded-full overflow-hidden" style="background:${sep}">
           <div class="h-full rounded-full transition-all duration-500"
             style="width:${pct}%;background:${over ? '#ef4444' : warn ? '#f59e0b' : '#10b981'}" />
         </div>
-        ${pacePct != null && html`<div title="Nhịp: hôm nay ngày ${parseInt(tNow.slice(8, 10), 10)}, nên ở khoảng ${Math.round(pacePct)}% (${fmtShort(paceAmt)})" style="position:absolute;top:50%;left:${pacePct}%;width:12px;height:12px;border-radius:50%;background:#18181b;border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(0,0,0,.25)"></div>`}
+        ${pacePct != null && html`<div title="Nhịp: đã qua ${Math.round(pacePct)}% khoảng thời gian, nên tiêu khoảng ${fmtShort(paceAmt)}" style="position:absolute;top:50%;left:${pacePct}%;width:12px;height:12px;border-radius:50%;background:#18181b;border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:0 0 0 1px rgba(0,0,0,.25)"></div>`}
       </div>
-      ${pacePct != null && html`<p class="text-xs" style="margin-top:6px;color:${total > paceAmt ? '#ef4444' : (dark ? '#94a3b8' : '#a1a1aa')};${total > paceAmt ? 'font-weight:600' : ''}">${total > paceAmt ? '\u{1F3C3} nhanh hơn nhịp ' + fmtShort(total - paceAmt) + ' (\u25CF ' + Math.round(pacePct) + '% · ' + fmtShort(paceAmt) + ')' : '\u25CF nhịp hôm nay ' + Math.round(pacePct) + '% · ' + fmtShort(paceAmt)}</p>`}
-      ${dailyRemain != null && fixed && fixed.total > 0 && html`<p class="text-xs" onClick=${onOpenFixed} style="margin-top:6px;color:${dark ? '#94a3b8' : '#a1a1aa'};cursor:pointer" title="Cố định ${fmtShort(fixed.total)}/tháng (mức thấp nhất T${fixed.months.map(m => parseInt(m.slice(5), 10)).join(', T')}), đã trừ trước khi chia tiền tuỳ ý mỗi ngày">\u{1F4CC} Chừa cố định ${fmtShort(fixed.reserved)} chưa tới · ${fmtShort(fixed.total)}/tháng${fixed.recurring.length ? ' · ' + fixed.recurring.slice(0, 2).map(r => r.label).join(', ') : ''}</p>`}
+      ${meta.length > 0 && html`<p class="text-xs" style="margin-top:6px;color:${mut}">${meta.map((m, k) => html`${k > 0 ? ' · ' : ''}${m}`)}</p>`}
       ${weekGoal && (weekGoal.spend <= weekGoal.budget ? html`
-        <div class="flex items-center justify-between mt-2 pt-2 gap-2" style="border-top:1px solid ${dark ? '#334155' : '#f4f4f5'}">
+        <div class="flex items-center justify-between gap-2" style="margin-top:6px">
           <span class="text-xs truncate" style="color:${dark ? '#fbbf24' : '#b45309'}">\u{1F3C5} Đến CN tiêu thêm dưới ${fmtShort(weekGoal.budget - weekGoal.spend)} là có thưởng</span>
           <span class="text-xs font-semibold shrink-0" style="color:${dark ? '#fbbf24' : '#b45309'}">+${weekGoal.pts}\u2B50 · +${fmtShort(weekGoal.amount)}</span>
         </div>` : html`
-        <div class="flex items-center justify-between mt-2 pt-2 gap-2" style="border-top:1px solid ${dark ? '#334155' : '#f4f4f5'}">
+        <div class="flex items-center justify-between gap-2" style="margin-top:6px">
           <span class="text-xs truncate" style="color:#f87171">Tuần này lố ${fmtShort(weekGoal.spend - weekGoal.budget)}, mất thưởng tuần</span>
-          <span class="text-xs shrink-0" style="color:${dark ? '#94a3b8' : '#71717a'}">T2 làm lại</span>
+          <span class="text-xs shrink-0" style="color:${mut}">T2 làm lại</span>
         </div>`)}
-      ${(savings > 0 || propSavingsTarget > 0) && html`
-        <div class="flex items-center justify-between mt-2 pt-2" style="border-top:1px solid ${dark ? '#334155' : '#f4f4f5'}">
-          <span class="text-xs" style="color:${dark ? '#5eead4' : '#0d9488'}">\u{1F4B0} Tiết kiệm${propSavingsTarget > 0 ? ' (mục tiêu ' + fmtShort(propSavingsTarget) + ')' : ''}</span>
-          <span class="text-sm font-semibold" style="color:${dark ? '#5eead4' : '#0d9488'}">${fmtShort(savings)}</span>
-        </div>
-      `}
     </div>
   `;
 }
@@ -1635,24 +1634,16 @@ function StreakCard({ expenses }) {
 
   if (!st) return null;
   return html`
-    <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
-      <div class="flex items-center gap-3">
-        <div style="font-size:28px;line-height:1">${st.cur > 0 ? '\u{1F525}' : '\u{1F4A4}'}</div>
-        <div class="flex-1 min-w-0">
-          <div class="flex items-baseline gap-1.5">
-            <span class="text-lg font-bold text-zinc-800 dark:text-zinc-200">${st.cur} ngày</span>
-            <span class="text-xs text-zinc-500 dark:text-zinc-400">tiêu dưới ${fmtShort(STREAK_LIMIT)}</span>
-          </div>
+    <div>
+      <div class="flex items-center gap-2">
+        <span class="text-sm font-bold text-zinc-800 dark:text-zinc-200" style="white-space:nowrap">${st.cur > 0 ? '\u{1F525}' : '\u{1F4A4}'} ${st.cur} ngày <span class="text-xs font-normal text-zinc-500 dark:text-zinc-400">dưới ${fmtShort(STREAK_LIMIT)}</span></span>
+        <div style="flex:1;display:flex;gap:2px;margin:0 4px" title="14 ngày gần nhất">
+          ${st.strip.map(x => html`<div key=${x.d} title="${x.d}: ${fmtShort(x.spend)}" style="flex:1;height:5px;border-radius:3px;background:${!x.has ? 'rgba(128,128,128,0.1)' : x.ok ? '#22c55e' : 'rgba(244,63,94,0.55)'}"></div>`)}
         </div>
-        ${st.best > 0 && html`<span class="text-xs text-zinc-400 shrink-0">kỷ lục ${st.best}</span>`}
-      </div>
-      <div style="display:flex;gap:3px;margin-top:8px">
-        ${st.strip.map(x => html`
-          <div key=${x.d} title="${x.d}: ${fmtShort(x.spend)}" style="flex:1;height:6px;border-radius:3px;background:${!x.has ? 'rgba(128,128,128,0.1)' : x.ok ? '#22c55e' : 'rgba(244,63,94,0.55)'}"></div>
-        `)}
+        ${st.best > 0 && html`<span class="text-xs text-zinc-400" style="white-space:nowrap">kỷ lục ${st.best}</span>`}
       </div>
       ${(wc || risk) && html`
-        <p class="text-xs text-zinc-500 dark:text-zinc-400" style="margin-top:7px;line-height:1.45">
+        <p class="text-xs text-zinc-500 dark:text-zinc-400 truncate" style="margin-top:5px">
           ${wc && html`<span style="font-weight:600;color:${wc.pct <= 0 ? '#16a34a' : '#ef4444'}">${cmpLabel(wc.pct)}</span> so với tuần trước`}
           ${wc && risk && ' · '}
           ${risk && html`\u26A0\uFE0F ${DOW_NAMES[risk.dow]} hay vung tay, TB ${fmtShort(risk.avg)}`}
@@ -1840,7 +1831,7 @@ function JarCard({ jar, penalties, rewards, challenge, expenses, onSaveJar, onOp
   const line = 'border-top:1px solid rgba(128,128,128,0.15)';
   const catsNote = CHALLENGE.cats.map(c => catMap[c].name).join(', ') + ' = 0đ ' + CHALLENGE.days + ' ngày liền';
   return html`
-    <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+    <div>
       ${edit ? html`
         <div class="space-y-1.5">
           <div class="flex gap-1 flex-wrap">${JAR_EMOJIS.map(e => html`<button key=${e} onClick=${() => setEmoji(e)} style="font-size:16px;padding:2px 5px;border-radius:7px;border:1px solid ${e === emoji ? '#14b8a6' : 'transparent'};background:${e === emoji ? 'rgba(20,184,166,0.15)' : 'transparent'}">${e}</button>`)}</div>
@@ -1857,11 +1848,19 @@ function JarCard({ jar, penalties, rewards, challenge, expenses, onSaveJar, onOp
         </div>
         ${jar.target > 0 && html`<div class="rounded-full overflow-hidden" style="height:4px;margin-top:8px;background:rgba(128,128,128,0.15)"><div class="h-full rounded-full" style="width:${pct}%;background:#14b8a6;transition:width .6s"></div></div>`}
       `}
-      <div class="flex items-center justify-between gap-2 text-xs" style="margin-top:8px">
+      <div class="flex items-center gap-3 text-xs" style="margin-top:8px" title=${catsNote}>
         <button onClick=${onOpenRewards} class="text-zinc-500 dark:text-zinc-400 truncate" style="background:none;border:none;padding:0;text-align:left">
-          \u{1F3C5} Thưởng ${fmtShort(rew)}${pending ? html` · <span class="font-semibold" style="color:#b45309">${pending} chờ chọn</span>` : ''} \u203A
+          \u{1F3C5} ${fmtShort(rew)}${pending ? html` · <span class="font-semibold" style="color:#b45309">${pending} chờ chọn</span>` : ''} \u203A
         </button>
         ${ledger.length > 0 && html`<button onClick=${() => setMore(!more)} class="text-zinc-400 shrink-0" style="background:none;border:none;padding:0">Lịch sử ${ledger.length} ${more ? '\u25BE' : '\u203A'}</button>`}
+        <span style="flex:1"></span>
+        ${cs ? html`
+          <span class="text-zinc-600 dark:text-zinc-300 shrink-0 flex items-center gap-1.5">\u{1F3AF} ${cs.soon ? 'Từ mai' : cs.dayNo + '/' + CHALLENGE.days}
+            <span class="flex gap-1">${cs.days.map(d => html`<span key=${d.d} title=${d.d} style="width:8px;height:8px;border-radius:50%;background:${d.state === 'clean' ? '#22c55e' : d.state === 'fail' ? '#ef4444' : d.state === 'today' ? '#14b8a6' : 'rgba(128,128,128,0.25)'}"></span>`)}</span>
+          </span>
+        ` : html`
+          <button onClick=${onStartChallenge} class="font-semibold shrink-0" style="background:none;border:none;padding:0;color:#0d9488">\u{1F3AF} ${showLast ? (lastCh.result === 'win' ? 'Xong +' + (-lastCh.pts) + '\u2B50 · Làm lại' : 'Đứt · Làm lại') : 'Thử thách ' + CHALLENGE.days + ' ngày'} \u203A</button>
+        `}
       </div>
       ${more && html`
         <div style="margin-top:6px;padding-top:4px;${line}">
@@ -1873,15 +1872,6 @@ function JarCard({ jar, penalties, rewards, challenge, expenses, onSaveJar, onOp
               : html`<span class="font-semibold shrink-0" style="color:${e.kind === 'win' ? '#16a34a' : '#ef4444'}">${e.kind === 'win' ? '+' + e.pts + '\u2B50' : '\u2717'}</span>`}
             </div>`)}
         </div>`}
-      <div class="flex items-center justify-between gap-2 text-xs" style="margin-top:8px;padding-top:8px;${line}" title=${catsNote}>
-        ${cs ? html`
-          <span class="text-zinc-600 dark:text-zinc-300 truncate">\u{1F3AF} ${cs.soon ? 'Từ mai' : 'Ngày ' + cs.dayNo + '/' + CHALLENGE.days} không tiêu linh tinh · +${CHALLENGE.pts}\u2B50</span>
-          <div class="flex gap-1 shrink-0">${cs.days.map(d => html`<span key=${d.d} title=${d.d} style="width:8px;height:8px;border-radius:50%;background:${d.state === 'clean' ? '#22c55e' : d.state === 'fail' ? '#ef4444' : d.state === 'today' ? '#14b8a6' : 'rgba(128,128,128,0.25)'}"></span>`)}</div>
-        ` : html`
-          <span class="text-zinc-500 dark:text-zinc-400 truncate">\u{1F3AF} ${showLast ? (lastCh.result === 'win' ? 'Thử thách xong +' + (-lastCh.pts) + '\u2B50' : 'Thử thách đứt ' + fmtDM(lastCh.failDay || lastCh.day)) : CHALLENGE.days + ' ngày không tiêu linh tinh · +' + CHALLENGE.pts + '\u2B50'}</span>
-          <button onClick=${onStartChallenge} class="font-semibold shrink-0" style="background:none;border:none;padding:0;color:#0d9488">${showLast ? 'Làm lại' : 'Bắt đầu'} \u203A</button>
-        `}
-      </div>
     </div>
   `;
 }
@@ -2522,8 +2512,12 @@ function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, date
 
   return html`
     <div>
-      <${StreakCard} expenses=${allExpenses} />
-      <${JarCard} jar=${jar} penalties=${penalties} rewards=${rewards} challenge=${challenge} expenses=${allExpenses} onSaveJar=${onSaveJar} onOpenRewards=${onOpenRewards} onStartChallenge=${onStartChallenge} />
+      <div class="mx-4 mt-3 p-3 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
+        <${StreakCard} expenses=${allExpenses} />
+        <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(128,128,128,0.15)">
+          <${JarCard} jar=${jar} penalties=${penalties} rewards=${rewards} challenge=${challenge} expenses=${allExpenses} onSaveJar=${onSaveJar} onOpenRewards=${onOpenRewards} onStartChallenge=${onStartChallenge} />
+        </div>
+      </div>
       <${CategoryChart} expenses=${rangeExpenses} allExpenses=${allExpenses} filterCat=${filterCat} onFilter=${onFilter} dateFrom=${dateFrom} dateTo=${dateTo} limits=${limits} penaltyNote=${penaltyNote} monthBudget=${monthBudget} baseLimits=${baseLimits} />
       <div class="mx-4 mt-3">
         <button onClick=${() => setExpanded(!expanded)}
@@ -3556,7 +3550,8 @@ function App() {
     const wd = new Date(); const day = wd.getDay() || 7; wd.setDate(wd.getDate() - day + 1);
     const weekStart = wd.toISOString().slice(0, 10);
     const isToday = dateFrom === t && dateTo === t;
-    const isThisWeek = dateFrom === weekStart && dateTo === t;
+    const curWeek = monthWeeks(m).find(([f, to]) => t >= f && t <= to);
+    const isThisWeek = (dateFrom === weekStart && dateTo === t) || (curWeek && dateFrom === curWeek[0] && dateTo === curWeek[1]);
     if (!isToday && !isThisWeek) return null;
 
     const DEFAULT_BUDGET = 15000000;
@@ -3623,7 +3618,7 @@ function App() {
     const weekBudget = remaining / (weekRanges.length - idx);
     const weekSpend = spendIn(weekRanges[idx][0], weekRanges[idx][1]);
     const weekSavings = saveIn(weekRanges[idx][0], weekRanges[idx][1]);
-    return { weekNum: idx + 1, weekBudget, weekSpend, weekSavings, month: m };
+    return { weekNum: idx + 1, weekBudget, weekSpend, weekSavings, month: m, from: weekRanges[idx][0], to: weekRanges[idx][1] };
   }, [dateFrom, dateTo, budgets, expenses, penalties]);
 
   // Cố định của tháng đang xem, cho bảng hạn mức
@@ -3636,13 +3631,15 @@ function App() {
   const budgetBarProps = weekInfo ? {
     total: weekInfo.weekSpend, budget: weekInfo.weekBudget, month: weekInfo.month,
     monthCount: 1, fullMonth: false, savings: weekInfo.weekSavings, income: 0, savingsTarget: 0,
-    dailyRemain: null, label: 'Tuần ' + weekInfo.weekNum + ' · Tháng ' + parseInt(weekInfo.month.slice(5)),
+    dailyRemain: dailyInfo ? dailyInfo.dailyRemain : null, label: 'Tuần ' + weekInfo.weekNum + ' · Tháng ' + parseInt(weekInfo.month.slice(5)),
+    fixed: dailyInfo ? dailyInfo.fixed : null, rangeFrom: weekInfo.from, rangeTo: weekInfo.to,
   } : {
     total: rangeTotal, budget: monthBudget, month: budgetMonth,
     monthCount: budgetInfo.months, fullMonth: budgetInfo.fullMonth, savings: rangeSavings,
     income: budgetInfo.income, savingsTarget: budgetInfo.savings_target,
     dailyRemain: dailyInfo ? dailyInfo.dailyRemain : null, label: null,
     fixed: dailyInfo ? dailyInfo.fixed : null,
+    rangeFrom: dateFrom, rangeTo: dateTo,
   };
 
   const addExpense = async (data) => {
@@ -3778,7 +3775,7 @@ function App() {
         onSave=${async (f) => { setFinance(f); setShowFinance(false); await apiCall('/api/settings', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ finance: f }) }); }} />`}
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} expenses=${expenses} />
-        <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} weekGoal=${weekGoal} fixed=${budgetBarProps.fixed || null} onOpenFixed=${() => setShowLimits(true)} />
+        <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} weekGoal=${weekGoal} fixed=${budgetBarProps.fixed || null} onOpenFixed=${() => setShowLimits(true)} rangeFrom=${budgetBarProps.rangeFrom} rangeTo=${budgetBarProps.rangeTo} />
         ${visibleDups.length > 0 && html`
           <div class="px-4 mt-3 space-y-2">
             ${visibleDups.map(group => {
