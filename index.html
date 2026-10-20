@@ -841,12 +841,12 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
       ${dailyRemain != null && fixed && fixed.total > 0 && html`<p class="text-xs" onClick=${onOpenFixed} style="margin-top:6px;color:${dark ? '#94a3b8' : '#a1a1aa'};cursor:pointer" title="Cố định ${fmtShort(fixed.total)}/tháng (mức thấp nhất T${fixed.months.map(m => parseInt(m.slice(5), 10)).join(', T')}), đã trừ trước khi chia tiền tuỳ ý mỗi ngày">\u{1F4CC} Chừa cố định ${fmtShort(fixed.reserved)} chưa tới · ${fmtShort(fixed.total)}/tháng${fixed.recurring.length ? ' · ' + fixed.recurring.slice(0, 2).map(r => r.label).join(', ') : ''}</p>`}
       ${weekGoal && (weekGoal.spend <= weekGoal.budget ? html`
         <div class="flex items-center justify-between mt-2 pt-2 gap-2" style="border-top:1px solid ${dark ? '#334155' : '#f4f4f5'}">
-          <span class="text-xs truncate" style="color:${dark ? '#fbbf24' : '#b45309'}">\u{1F3C5} Dưới ngưỡng tuần còn ${fmtShort(weekGoal.budget - weekGoal.spend)} · giữ đến CN${weekGoal.streak > 0 ? ' · chuỗi ' + weekGoal.streak + ' tuần' : ''}</span>
-          <span class="text-xs font-semibold shrink-0" style="color:${dark ? '#fbbf24' : '#b45309'}">+${weekGoal.pts}\u2B50 ~${fmtShort(weekGoal.amount)}</span>
+          <span class="text-xs truncate" style="color:${dark ? '#fbbf24' : '#b45309'}">\u{1F3C5} Đến CN tiêu thêm dưới ${fmtShort(weekGoal.budget - weekGoal.spend)} là có thưởng</span>
+          <span class="text-xs font-semibold shrink-0" style="color:${dark ? '#fbbf24' : '#b45309'}">+${weekGoal.pts}\u2B50 · +${fmtShort(weekGoal.amount)}</span>
         </div>` : html`
         <div class="flex items-center justify-between mt-2 pt-2 gap-2" style="border-top:1px solid ${dark ? '#334155' : '#f4f4f5'}">
-          <span class="text-xs truncate" style="color:#f87171">Lố ngưỡng tuần ${fmtShort(weekGoal.spend - weekGoal.budget)} · mất thưởng tuần${weekGoal.streak > 0 ? ' và chuỗi ' + weekGoal.streak + ' tuần' : ''}</span>
-          <span class="text-xs shrink-0" style="color:${dark ? '#94a3b8' : '#71717a'}">\u{1F331} T2 làm lại</span>
+          <span class="text-xs truncate" style="color:#f87171">Tuần này lố ${fmtShort(weekGoal.spend - weekGoal.budget)}, mất thưởng tuần</span>
+          <span class="text-xs shrink-0" style="color:${dark ? '#94a3b8' : '#71717a'}">T2 làm lại</span>
         </div>`)}
       ${(savings > 0 || propSavingsTarget > 0) && html`
         <div class="flex items-center justify-between mt-2 pt-2" style="border-top:1px solid ${dark ? '#334155' : '#f4f4f5'}">
@@ -1719,7 +1719,7 @@ function StreakCard({ expenses }) {
         <div class="flex-1 min-w-0">
           <div class="flex items-baseline gap-1.5">
             <span class="text-lg font-bold text-zinc-800 dark:text-zinc-200">${st.cur} ngày</span>
-            <span class="text-xs text-zinc-500 dark:text-zinc-400">không tiêu / dưới ${fmtShort(STREAK_LIMIT)}</span>
+            <span class="text-xs text-zinc-500 dark:text-zinc-400">tiêu dưới ${fmtShort(STREAK_LIMIT)}</span>
           </div>
         </div>
         ${st.best > 0 && html`<span class="text-xs text-zinc-400 shrink-0">kỷ lục ${st.best}</span>`}
@@ -1731,9 +1731,9 @@ function StreakCard({ expenses }) {
       </div>
       ${(wc || risk) && html`
         <p class="text-xs text-zinc-500 dark:text-zinc-400" style="margin-top:7px;line-height:1.45">
-          ${wc && html`<span style="font-weight:600;color:${wc.pct <= 0 ? '#16a34a' : '#ef4444'}">${cmpLabel(wc.pct)}</span> vs cùng kỳ tuần trước${wc.top ? ', tăng nhất ' + wc.top.cat.name + ' +' + fmtShort(wc.top.diff) : ''}`}
+          ${wc && html`<span style="font-weight:600;color:${wc.pct <= 0 ? '#16a34a' : '#ef4444'}">${cmpLabel(wc.pct)}</span> so với tuần trước`}
           ${wc && risk && ' · '}
-          ${risk && html`\u26A0\uFE0F ${DOW_NAMES[risk.dow]} hay tiêu linh tinh (TB ${fmtShort(risk.avg)})${risk.spentToday ? ', hôm nay đã ' + fmtShort(risk.spentToday) : ', hôm nay chưa'}`}
+          ${risk && html`\u26A0\uFE0F ${DOW_NAMES[risk.dow]} hay vung tay, TB ${fmtShort(risk.avg)}`}
         </p>`}
     </div>
   `;
@@ -2420,7 +2420,7 @@ function computeCheckin(checkins, expenses, t, weekWin = null) {
   if (seed % 5 === 0) lines.push({ label: '\u{1F340} Bonus may mắn', pts: 50 });
   if (weekWin && weekWin.won) {
     const fmtD = (d) => d.slice(8, 10) + '/' + d.slice(5, 7);
-    lines.push({ label: '\u{1F3C5} Tuần ' + fmtD(weekWin.st.from) + '–' + fmtD(weekWin.st.to) + ' dưới ngân sách' + (weekWin.streak > 1 ? ' · chuỗi ' + weekWin.streak + ' tuần' : '') + (weekWin.double ? ' · \u{1F3B2} nhân đôi' : ''), pts: weekWin.pts });
+    lines.push({ label: '\u{1F3C5} Tuần rồi tiêu không hết' + (weekWin.streak > 1 ? ' · ' + weekWin.streak + ' tuần liền' : '') + (weekWin.double ? ' · \u{1F3B2} nhân đôi' : ''), pts: weekWin.pts });
   }
   const pts = lines.reduce((s, l) => s + l.pts, 0);
   const total = checkins.reduce((s, c) => s + (c.points || 0), 0) + pts;
@@ -2450,6 +2450,7 @@ function RewardsModal({ checkins, rewards, penalties, catLimits, budgets, dark, 
   const bg = dark ? '#1e293b' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#334155' : '#e4e4e7';
   const card = dark ? '#0f172a' : '#fafafa';
   const [busy, setBusy] = useState(false);
+  const [help, setHelp] = useState(false);
   const bal = pointsBalance(checkins, rewards);
   const m = today().slice(0, 7), pm = prevMonthOf(m);
   const st = checkinStreakInfo(checkins);
@@ -2477,7 +2478,7 @@ function RewardsModal({ checkins, rewards, penalties, catLimits, budgets, dark, 
           <span style="font-size:34px;font-weight:800;color:${fg};line-height:1">${fmt(bal)}</span>
           <span class="text-sm" style="color:${mut}">điểm còn lại</span>
         </div>
-        <p class="text-xs" style="color:${mut};margin-top:4px">Đã kiếm ${fmt(pointsEarned(checkins, rewards))} · đã đổi ${fmt(pointsSpent(rewards))} · chuỗi check-in ${st.cur} ngày</p>
+        <p class="text-xs" style="color:${mut};margin-top:4px">Đã kiếm ${fmt(pointsEarned(checkins, rewards))} · đã đổi ${fmt(pointsSpent(rewards))}</p>
 
         ${pendingWins.map(r => html`
           <div key=${r.id} style="margin-top:14px;padding:12px;border-radius:14px;background:linear-gradient(135deg,rgba(245,158,11,0.18),rgba(236,72,153,0.14));border:1px solid ${dark ? '#854d0e' : '#fcd34d'}">
@@ -2485,7 +2486,7 @@ function RewardsModal({ checkins, rewards, penalties, catLimits, budgets, dark, 
               <span class="text-sm font-semibold" style="color:${fg}">\u{1F3C5} Thưởng tuần ${fmtD(r.week)}–${fmtD(r.to || r.week)}</span>
               <span class="text-xs font-semibold" style="color:#b45309">+${fmtShort(r.amount)}</span>
             </div>
-            <p class="text-xs" style="color:${mut};margin-top:3px">Dư ${fmtShort(r.saved || 0)}${r.streak > 1 ? ' · chuỗi ' + r.streak + ' tuần' : ''}. Cộng vào trần tháng ${parseInt(m.slice(5), 10)}:</p>
+            <p class="text-xs" style="color:${mut};margin-top:3px">Nới trần tháng ${parseInt(m.slice(5), 10)} cho mục nào?</p>
             <div style="display:flex;gap:8px;margin-top:8px">
               ${PENALTY_CATS.map(c => { const cur = computeLimit(c, m, catLimits, penalties, budgets, rewards); return html`
                 <button key=${c} disabled=${busy} onClick=${() => go('weekwin', { id: r.id, cat: c })} style="${btn(!busy)};flex:1;text-align:left">
@@ -2500,7 +2501,7 @@ function RewardsModal({ checkins, rewards, penalties, catLimits, budgets, dark, 
             <span class="text-sm font-semibold" style="color:${fg}">🛍️ Nới trần tháng ${parseInt(m.slice(5), 10)}</span>
             <span class="text-xs font-semibold" style="color:#b45309">${fmt(REWARD_QUOTA.pts)} điểm</span>
           </div>
-          <p class="text-xs" style="color:${mut};margin-top:3px">+${fmtShort(REWARD_QUOTA.amount)} vào hạn mức Mua sắm hoặc Làm đẹp tháng này. Tiền thật, nhưng có kiểm soát.</p>
+          <p class="text-xs" style="color:${mut};margin-top:3px">+${fmtShort(REWARD_QUOTA.amount)} vào trần Mua sắm hoặc Làm đẹp tháng này.</p>
           <div style="display:flex;gap:8px;margin-top:8px">
             ${PENALTY_CATS.map(c => { const cur = computeLimit(c, m, catLimits, penalties, budgets, rewards); const ok = bal >= REWARD_QUOTA.pts && !busy; return html`
               <button key=${c} disabled=${!ok} onClick=${() => go('quota', { cat: c })} style="${btn(ok)};flex:1;text-align:left">
@@ -2516,9 +2517,9 @@ function RewardsModal({ checkins, rewards, penalties, catLimits, budgets, dark, 
             <span class="text-xs font-semibold" style="color:#b45309">${fmt(REWARD_PATCH.pts)} điểm</span>
           </div>
           ${st.gap ? html`
-            <p class="text-xs" style="color:${mut};margin-top:3px">Quên mở app ngày ${fmtD(st.gap)}. Vá lại: chuỗi ${st.cur} → <b style="color:${fg}">${st.after} ngày</b>${st.after === st.cur + 1 ? ' (còn ngày đứt khác phía trước, vá tiếp sau)' : ''}.</p>
+            <p class="text-xs" style="color:${mut};margin-top:3px">Quên ngày ${fmtD(st.gap)}. Vá xong: chuỗi ${st.cur} → <b style="color:${fg}">${st.after} ngày</b>.</p>
             <button disabled=${bal < REWARD_PATCH.pts || busy} onClick=${() => go('patch', { day: st.gap })} style="${btn(bal >= REWARD_PATCH.pts && !busy)};margin-top:8px;width:100%">Vá ngày ${fmtD(st.gap)}</button>
-          ` : html`<p class="text-xs" style="color:${mut};margin-top:3px">Chuỗi đang liền mạch, không có ngày nào cần vá. 🔥</p>`}
+          ` : html`<p class="text-xs" style="color:${mut};margin-top:3px">Chuỗi đang liền, không cần vá.</p>`}
         </div>
 
         <div style="margin-top:10px;padding:12px;border-radius:14px;background:${card};border:1px solid ${bd}">
@@ -2526,10 +2527,10 @@ function RewardsModal({ checkins, rewards, penalties, catLimits, budgets, dark, 
             <span class="text-sm font-semibold" style="color:${fg}">⚖️ Giảm tiền phạt T${parseInt(pm.slice(5), 10)}</span>
             <span class="text-xs font-semibold" style="color:#b45309">${fmt(REWARD_FINE.pts)} điểm</span>
           </div>
-          ${fineCats.length === 0 ? html`<p class="text-xs" style="color:${mut};margin-top:3px">Tháng ${parseInt(pm.slice(5), 10)} không bị phạt. Không có gì để giảm, tuyệt. 🎉</p>`
-          : disc >= REWARD_FINE.maxPct ? html`<p class="text-xs" style="color:${mut};margin-top:3px">Đã giảm tối đa ${REWARD_FINE.maxPct}%: phạt còn ${fmtShort(fineTotal)} (gốc ${fmtShort(fineBase)}). Phần lố vẫn bị trừ vào hạn mức tháng này.</p>`
+          ${fineCats.length === 0 ? html`<p class="text-xs" style="color:${mut};margin-top:3px">Tháng ${parseInt(pm.slice(5), 10)} không bị phạt.</p>`
+          : disc >= REWARD_FINE.maxPct ? html`<p class="text-xs" style="color:${mut};margin-top:3px">Đã giảm tối đa ${REWARD_FINE.maxPct}%, phạt còn ${fmtShort(fineTotal)}.</p>`
           : html`
-            <p class="text-xs" style="color:${mut};margin-top:3px">Phạt hiện ${fmtShort(fineTotal)}${disc ? ' (đã giảm ' + disc + '%)' : ''}. Giảm thêm ${REWARD_FINE.pct}%: còn <b style="color:${fg}">${fmtShort(fineNext)}</b>, tiết kiệm ${fmtShort(fineSave)}. Tối đa ${REWARD_FINE.maxPct}%. App sửa luôn khoản Tiết kiệm đã ghi.</p>
+            <p class="text-xs" style="color:${mut};margin-top:3px">Phạt đang ${fmtShort(fineTotal)}${disc ? ' (đã giảm ' + disc + '%)' : ''}. Giảm thêm ${REWARD_FINE.pct}% → còn <b style="color:${fg}">${fmtShort(fineNext)}</b>. Tối đa ${REWARD_FINE.maxPct}%.</p>
             <button disabled=${bal < REWARD_FINE.pts || busy} onClick=${() => go('fine', {})} style="${btn(bal >= REWARD_FINE.pts && !busy)};margin-top:8px;width:100%">Giảm ${REWARD_FINE.pct}% (−${fmtShort(fineSave)})</button>
           `}
         </div>
@@ -2538,7 +2539,13 @@ function RewardsModal({ checkins, rewards, penalties, catLimits, budgets, dark, 
           <p class="text-xs font-semibold" style="color:${mut};margin-top:14px">Đã đổi gần đây</p>
           ${log.map(r => html`<div key=${r.id} class="flex items-center justify-between text-xs" style="padding:5px 0;border-bottom:1px solid ${bd};color:${fg}"><span>${fmtD(r.day)} · ${(typeLabel[r.type] || (() => r.type))(r)}</span><span style="color:${mut}">−${fmt(r.pts)}</span></div>`)}
         `}
-        <p class="text-xs" style="color:${mut};margin-top:12px;line-height:1.5">Kiếm điểm: mở app mỗi ngày 10, hôm trước tiêu dưới ${fmtShort(STREAK_LIMIT)} +20, chuỗi ngày +5/ngày (tối đa 50), mốc 3/7/14/30/100 ngày thưởng lớn, thỉnh thoảng có 🍀 may mắn +50. \u{1F3C5} Tuần (T2→CN) tiêu không hết ngân sách tuần: +${WEEK_WIN.pts} điểm, mỗi tuần thắng liên tiếp cộng thêm ${WEEK_WIN.streakStep} (tối đa ${WEEK_WIN.maxPts}), 1/4 số tuần được nhân đôi, kèm ${WEEK_WIN.rate * 100}% phần dư (${fmtShort(WEEK_WIN.minAmt)}–${fmtShort(WEEK_WIN.maxAmt)}) nới trần Mua sắm/Làm đẹp. \u{1F3AF} Thử thách ${CHALLENGE.days} ngày không tiêu linh tinh (bắt đầu ở hũ trên trang chính): +${CHALLENGE.pts}. Mốc check-in mở hộp quà đồng/bạc/vàng (×1/×1.5/×2).</p>
+        <button onClick=${() => setHelp(!help)} class="text-xs" style="margin-top:12px;color:${mut};background:none;border:none;padding:0">Cách kiếm điểm ${help ? '\u25BE' : '\u203A'}</button>
+        ${help && html`<div class="text-xs" style="color:${mut};margin-top:6px;line-height:1.7">
+          <div>\u2B50 Mở app +10 · hôm trước tiêu dưới ${fmtShort(STREAK_LIMIT)} +20 · mỗi ngày chuỗi +5</div>
+          <div>\u{1F3C6} Mốc 3 · 7 · 14 · 30 · 100 ngày: hộp quà</div>
+          <div>\u{1F3C5} Tuần tiêu không hết ngân sách: +${WEEK_WIN.pts}, thêm ${WEEK_WIN.streakStep} mỗi tuần liền, kèm tiền nới trần</div>
+          <div>\u{1F3AF} Thử thách ${CHALLENGE.days} ngày không tiêu linh tinh: +${CHALLENGE.pts}</div>
+        </div>`}
       </div>
     </div>
   `;
@@ -2578,7 +2585,7 @@ function CheckinModal({ reward, onClose, dark }) {
             </div>
           `)}
         </div>
-        ${reward.weekWin && html`<p class="text-xs" style="margin-top:12px;padding:8px 10px;border-radius:10px;text-align:left;line-height:1.5;background:${dark ? 'rgba(245,158,11,0.12)' : '#fffbeb'};color:${dark ? '#fbbf24' : '#b45309'}">🎁 Dư ${fmtShort(reward.weekWin.saved)} \u2192 <b>+${fmtShort(reward.weekWin.amount)}</b> trần Mua sắm hoặc Làm đẹp. Chọn ở ⭐ đầu trang.</p>`}
+        ${reward.weekWin && html`<p class="text-xs" style="margin-top:12px;padding:8px 10px;border-radius:10px;text-align:left;line-height:1.5;background:${dark ? 'rgba(245,158,11,0.12)' : '#fffbeb'};color:${dark ? '#fbbf24' : '#b45309'}">🎁 Thêm <b>+${fmtShort(reward.weekWin.amount)}</b> nới trần Mua sắm hoặc Làm đẹp. Chọn ở ⭐ đầu trang.</p>`}
         <p class="text-xs" style="margin-top:14px;color:${dark ? '#94a3b8' : '#71717a'};font-style:italic">“${reward.quote}”</p>
         <p class="text-xs" style="margin-top:8px;color:${dark ? '#64748b' : '#a1a1aa'}">Tổng ⭐ ${fmt(reward.total)} điểm</p>
         <button onClick=${onClose} class="w-full mt-4 py-2.5 rounded-xl text-sm font-semibold text-white" style="background:linear-gradient(135deg,#f59e0b,#ec4899)">Nhận thưởng</button>
