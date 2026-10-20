@@ -1345,26 +1345,19 @@ function WeekdayChart({ expenses }) {
 }
 
 function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo }) {
-  const insights = useMemo(() => {
-    if (rangeExpenses.length === 0) return [];
-    const result = [];
-    const spendingExpenses = rangeExpenses.filter(e => e.category !== SAVINGS_CAT);
-    const total = spendingExpenses.reduce((s, e) => s + e.amount, 0);
-
-    // 1. Compare with previous period + breakdown by category
-    const fromD = new Date(dateFrom + 'T00:00:00');
-    const toD = new Date(dateTo + 'T00:00:00');
+  // Thống kê đầu Insights: so kỳ trước bằng thanh, mục đổi nhiều nhất bằng cặp thanh, số liệu dạng ô.
+  // "Khoản chi nhiều nhất" không còn ở đây, đã có Top 5 phía dưới.
+  const d = useMemo(() => {
+    const spending = rangeExpenses.filter(e => e.category !== SAVINGS_CAT);
+    if (spending.length === 0) return null;
+    const total = spending.reduce((s, e) => s + e.amount, 0);
+    const fromD = new Date(dateFrom + 'T00:00:00'), toD = new Date(dateTo + 'T00:00:00');
     const rangeDays = Math.round((toD - fromD) / 86400000) + 1;
-    const prevFrom = new Date(fromD);
-    prevFrom.setDate(prevFrom.getDate() - rangeDays);
+    const prevFrom = new Date(fromD); prevFrom.setDate(prevFrom.getDate() - rangeDays);
     const prevFromStr = prevFrom.toISOString().slice(0, 10);
-    const prevToStr = dateFrom;
-    const prevExpenses = allExpenses.filter(e => e.date >= prevFromStr && e.date < prevToStr && e.category !== SAVINGS_CAT);
-    const prevTotal = prevExpenses.reduce((s, e) => s + e.amount, 0);
-
-    // Trung bình các tháng: tối đa 6 tháng TRỌN VẸN trước tháng đang xem (tháng đang xem
-    // thường chưa hết nên không tính vào). Chỉ so khi khung lọc dài cỡ một tháng, kẻo
-    // đem "Tuần này" so với trung bình tháng thì vô nghĩa.
+    const prev = allExpenses.filter(e => e.date >= prevFromStr && e.date < dateFrom && e.category !== SAVINGS_CAT);
+    const prevTotal = prev.reduce((s, e) => s + e.amount, 0);
+    // TB các tháng trọn vẹn trước tháng đang xem (tối đa 6), chỉ khi khung lọc là một tháng
     const curMonth = dateFrom.slice(0, 7);
     const monthTotals = {}, monthCats = {};
     allExpenses.forEach(e => {
@@ -1378,144 +1371,73 @@ function TextInsights({ rangeExpenses, allExpenses, budgets, dateFrom, dateTo })
     const avgMonths = Object.keys(monthTotals).sort().slice(-6);
     const nAvg = avgMonths.length;
     const isMonthish = rangeDays >= 20 && rangeDays <= 31 && dateFrom.endsWith('-01');
-    const avgTotal = nAvg > 0 ? Math.round(avgMonths.reduce((s, m) => s + monthTotals[m], 0) / nAvg) : 0;
-    const avgCat = (c) => nAvg > 0 ? Math.round(avgMonths.reduce((s, m) => s + (monthCats[m][c] || 0), 0) / nAvg) : 0;
-    const vsAvg = (cur, avg) => {
-      if (!avg) return '';
-      const pct = Math.round((cur - avg) / avg * 100);
-      return ' (' + (pct > 0 ? '+' : '') + pct + '% so TB)';
-    };
-    const avgLine = (isMonthish && nAvg >= 2 && avgTotal > 0) ? {
-      text: 'TB ' + nAvg + ' tháng trước: ' + fmtShort(avgTotal) + ' · tháng này ' + fmtShort(total) + vsAvg(total, avgTotal),
-      color: total > avgTotal ? '#ef4444' : '#10b981',
-    } : null;
-    if (prevTotal > 0) {
-      const diff = total - prevTotal;
-      const diffPct = Math.round(Math.abs(diff) / prevTotal * 100);
-      // Find which categories changed the most
-      const curCatTotals = {};
-      spendingExpenses.forEach(e => { curCatTotals[e.category] = (curCatTotals[e.category] || 0) + e.amount; });
-      const prevCatTotals = {};
-      prevExpenses.forEach(e => { prevCatTotals[e.category] = (prevCatTotals[e.category] || 0) + e.amount; });
-      const allCats = new Set([...Object.keys(curCatTotals), ...Object.keys(prevCatTotals)]);
-      const catDiffs = [];
-      allCats.forEach(c => {
-        const cur = curCatTotals[c] || 0;
-        const prev = prevCatTotals[c] || 0;
-        if (cur !== prev) catDiffs.push({ cat: c, diff: cur - prev });
-      });
-      catDiffs.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
-      // "Mua sắm -15.3M" không cho biết đó là số của kỳ nào, nên ghi thẳng
-      // từ bao nhiêu còn bao nhiêu. Mỗi nhóm tự tô màu vì một nhóm có thể
-      // tăng ngược chiều với tổng.
-      const topChanges = catDiffs.slice(0, 2).map(cd => {
-        const cat = catMap[cd.cat] || catMap.other;
-        const name = CAT_NAMES[cd.cat] || cat.name;
-        const cur = curCatTotals[cd.cat] || 0;
-        const prev = prevCatTotals[cd.cat] || 0;
-        const a = isMonthish && nAvg >= 2 ? avgCat(cd.cat) : 0;
-        return {
-          text: cat.emoji + ' ' + name + ': ' + fmtShort(prev) + ' → ' + fmtShort(cur)
-            + ' (' + (cd.diff > 0 ? '+' : '-') + fmtShort(Math.abs(cd.diff)) + ')'
-            + (a > 0 ? ' · TB ' + fmtShort(a) : ''),
-          color: cd.diff > 0 ? '#ef4444' : '#10b981',
-        };
-      });
-      if (avgLine) topChanges.unshift(avgLine);
-
-      if (diff > 0) {
-        result.push({ icon: '\u{1F4C8}', title: 'Tăng ' + diffPct + '% so kỳ trước', subtitle: fmtShort(prevTotal) + ' → ' + fmtShort(total), details: topChanges, color: '#ef4444' });
-      } else if (diff < 0) {
-        result.push({ icon: '\u{1F4C9}', title: 'Giảm ' + diffPct + '% so kỳ trước', subtitle: fmtShort(prevTotal) + ' → ' + fmtShort(total), details: topChanges, color: '#10b981' });
-      }
-    }
-
-    // 2. Most expensive day
+    const hasAvg = isMonthish && nAvg >= 2;
+    const avgTotal = hasAvg ? Math.round(avgMonths.reduce((s, m) => s + monthTotals[m], 0) / nAvg) : 0;
+    const avgCat = c => hasAvg ? Math.round(avgMonths.reduce((s, m) => s + (monthCats[m][c] || 0), 0) / nAvg) : 0;
+    const sumCat = list => { const o = {}; list.forEach(e => { o[e.category] = (o[e.category] || 0) + e.amount; }); return o; };
+    const curCat = sumCat(spending), prevCat = sumCat(prev);
+    const catChanges = prevTotal > 0
+      ? [...new Set([...Object.keys(curCat), ...Object.keys(prevCat)])]
+          .map(c => ({ cat: c, prev: prevCat[c] || 0, cur: curCat[c] || 0, avg: avgCat(c) }))
+          .filter(x => x.cur !== x.prev)
+          .sort((a, b) => Math.abs(b.cur - b.prev) - Math.abs(a.cur - a.prev)).slice(0, 3)
+      : [];
     const byDate = {};
-    spendingExpenses.forEach(e => { byDate[e.date] = (byDate[e.date] || 0) + e.amount; });
-    const dates = Object.entries(byDate).sort((a,b) => b[1] - a[1]);
-    if (dates.length > 1) {
-      const [maxDate, maxAmt] = dates[0];
-      const d = new Date(maxDate + 'T00:00:00');
-      const dayNames = ['CN','T2','T3','T4','T5','T6','T7'];
-      result.push({ icon: '\u{1F525}', title: 'Ngày chi nhiều nhất', subtitle: d.getDate() + '/' + (d.getMonth()+1) + ' (' + dayNames[d.getDay()] + ') — ' + fmtShort(maxAmt), color: '#f97316' });
-    }
-
-    // 2b. Khoản chi nhiều nhất theo thương hiệu / tên (cùng cách gộp với Top 5)
-    const namedGroups = groupByName(spendingExpenses);
-    if (namedGroups.length > 0) {
-      const lines = namedGroups.slice(0, 5).map(g => {
-        const cat = catMap[g.topCat] || catMap.other;
-        const pct = total > 0 ? Math.round(g.total / total * 100) : 0;
-        return cat.emoji + ' ' + g.label + (g.count > 1 ? ' ×' + g.count : '')
-          + ' — ' + fmtShort(g.total) + (pct >= 1 ? ' (' + pct + '%)' : '');
-      });
-      result.push({ icon: '\u{1F3F7}\u{FE0F}', title: 'Khoản chi nhiều nhất', subtitle: fmtShort(namedGroups[0].total), details: lines, color: '#8b5cf6' });
-    }
-
-    // 3. Thống kê — kèm so sánh với kỳ trước dài bằng đúng khung đang lọc.
-    // Đếm theo spendingExpenses chứ không phải rangeExpenses: tiền bỏ ống
-    // không phải khoản chi, tính vào thì trung bình mỗi ngày lệch hẳn.
-    const activeDays = Object.keys(byDate).length;
-    const avgPerActiveDay = activeDays > 0 ? Math.round(total / activeDays) : 0;
-    const txCount = spendingExpenses.length;
-    const avgPerTx = txCount > 0 ? Math.round(total / txCount) : 0;
-
-    const prevByDate = {};
-    prevExpenses.forEach(e => { prevByDate[e.date] = (prevByDate[e.date] || 0) + e.amount; });
-    const prevActiveDays = Object.keys(prevByDate).length;
-    const prevAvgPerDay = prevActiveDays > 0 ? Math.round(prevTotal / prevActiveDays) : 0;
-    const prevTxCount = prevExpenses.length;
-    const prevAvgPerTx = prevTxCount > 0 ? Math.round(prevTotal / prevTxCount) : 0;
-
-    const cmp = (label, prev, cur) => {
-      if (!prev) return { text: label + ' ' + fmtShort(cur) };
-      const pct = Math.round((cur - prev) / prev * 100);
-      return {
-        text: label + ' ' + fmtShort(prev) + ' → ' + fmtShort(cur)
-          + ' (' + (pct > 0 ? '+' : '') + pct + '%)',
-        color: pct > 0 ? '#ef4444' : pct < 0 ? '#10b981' : null,
-      };
+    spending.forEach(e => { byDate[e.date] = (byDate[e.date] || 0) + e.amount; });
+    const days = Object.entries(byDate).sort((a, b) => b[1] - a[1]);
+    const maxDay = days.length > 1 ? { date: days[0][0], amt: days[0][1] } : null;
+    const activeDays = days.length;
+    const prevActiveDays = new Set(prev.map(e => e.date)).size;
+    return {
+      total, prevTotal, avgTotal, nAvg, catChanges, maxDay,
+      perDay: { cur: activeDays ? Math.round(total / activeDays) : 0, prev: prevActiveDays ? Math.round(prevTotal / prevActiveDays) : 0 },
+      perTx: { cur: Math.round(total / spending.length), prev: prev.length ? Math.round(prevTotal / prev.length) : 0 },
+      tx: { cur: spending.length, prev: prev.length },
     };
-
-    if (activeDays > 1 || txCount > 0) {
-      const lines = [];
-      if (activeDays > 1) {
-        const c = cmp('TB/ngày', prevAvgPerDay, avgPerActiveDay);
-        lines.push({ text: activeDays + ' ngày' + (prevActiveDays ? ' (kỳ trước ' + prevActiveDays + ')' : '') + ' · ' + c.text, color: c.color });
-      }
-      if (txCount > 0) {
-        const c = cmp('TB/lần', prevAvgPerTx, avgPerTx);
-        lines.push({ text: txCount + ' giao dịch' + (prevTxCount ? ' (kỳ trước ' + prevTxCount + ')' : '') + ' · ' + c.text, color: c.color });
-      }
-      if (avgLine && !(prevTotal > 0 && total !== prevTotal)) lines.unshift(avgLine);
-      result.push({ icon: '\u{1F4CA}', title: 'Thống kê', details: lines, color: '#6366f1' });
-    }
-
-    return result;
   }, [rangeExpenses, allExpenses, dateFrom, dateTo]);
+  if (!d) return null;
 
-  if (insights.length === 0) return null;
-
+  const RED = '#ef4444', GREEN = '#10b981', GREY = 'rgba(128,128,128,0.45)', TRACK = 'rgba(128,128,128,0.14)';
+  const pctOf = (cur, prev) => prev > 0 ? Math.round((cur - prev) / prev * 100) : null;
+  // Chênh lệch: tiêu tăng là đỏ, giảm là xanh
+  const Delta = ({ cur, prev }) => {
+    const p = pctOf(cur, prev);
+    if (p == null || p === 0) return null;
+    return html`<span class="text-xs font-semibold" style="color:${p > 0 ? RED : GREEN}">${p > 0 ? '\u25B2' : '\u25BC'}${Math.abs(p)}%</span>`;
+  };
+  const Bar = ({ v, max, color, h = 8 }) => html`<div class="rounded-full overflow-hidden" style="height:${h}px;background:${TRACK}"><div style="width:${max > 0 ? Math.min(100, v / max * 100) : 0}%;height:100%;border-radius:999px;background:${color};transition:width .5s"></div></div>`;
+  const Tile = ({ label, children }) => html`<div style="flex:1 1 45%;min-width:0;padding:8px 10px;border-radius:10px;background:${TRACK}"><p class="text-xs text-zinc-500 dark:text-zinc-400" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</p><div class="flex items-baseline gap-1.5 flex-wrap">${children}</div></div>`;
+  const upColor = d.total > d.prevTotal ? RED : GREEN;
+  const scale = Math.max(d.total, d.prevTotal, d.avgTotal);
+  const dow = ds => ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'][new Date(ds + 'T00:00:00').getDay()];
+  const big = 'text-sm font-bold text-zinc-800 dark:text-zinc-200';
   return html`
     <div class="mx-4 mt-3 p-4 bg-white dark:bg-zinc-800 rounded-xl border border-zinc-200 dark:border-zinc-700">
-      <div class="space-y-3.5">
-        ${insights.map((ins, i) => html`
-          <div key=${i}>
-            <div class="flex items-center gap-2">
-              <span style="font-size:18px">${ins.icon}</span>
-              <span class="font-semibold" style="font-size:13px;color:${ins.color}">${ins.title}</span>
-              ${ins.subtitle && html`<span class="font-bold ml-auto" style="font-size:14px;color:${ins.color}">${ins.subtitle}</span>`}
-            </div>
-            ${ins.details && ins.details.length > 0 && html`
-              <div style="margin-left:34px;margin-top:4px">
-                ${ins.details.map((d, j) => html`
-                  <p key=${j} class=${d.color ? '' : 'text-zinc-500 dark:text-zinc-400'} style=${'font-size:12px;line-height:1.6' + (d.color ? ';color:' + d.color : '')}>${d.text || d}</p>
-                `)}
-              </div>
-            `}
-          </div>
-        `)}
+      ${(d.prevTotal > 0 || d.avgTotal > 0) && html`
+        <div class="flex items-center justify-between">
+          <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200">So với kỳ trước</span>
+          <${Delta} cur=${d.total} prev=${d.prevTotal} />
+        </div>
+        <div style="margin-top:8px;display:grid;grid-template-columns:48px 1fr 52px;gap:5px 8px;align-items:center">
+          ${d.prevTotal > 0 && html`<span class="text-xs text-zinc-400">trước</span><${Bar} v=${d.prevTotal} max=${scale} color=${GREY} /><span class="text-xs text-zinc-500 dark:text-zinc-400 text-right">${fmtShort(d.prevTotal)}</span>`}
+          <span class="text-xs text-zinc-400">kỳ này</span><${Bar} v=${d.total} max=${scale} color=${upColor} /><span class="text-xs font-semibold text-right" style="color:${upColor}">${fmtShort(d.total)}</span>
+          ${d.avgTotal > 0 && html`<span class="text-xs text-zinc-400" title="Trung bình ${d.nAvg} tháng trước">TB ${d.nAvg}th</span><${Bar} v=${d.avgTotal} max=${scale} color="rgba(99,102,241,0.5)" /><span class="text-xs text-zinc-500 dark:text-zinc-400 text-right">${fmtShort(d.avgTotal)}</span>`}
+        </div>
+      `}
+      ${d.catChanges.length > 0 && html`
+        <p class="text-xs text-zinc-500 dark:text-zinc-400" style="margin-top:12px">Đổi nhiều nhất · xám là kỳ trước</p>
+        <div style="margin-top:5px;display:grid;grid-template-columns:auto 1fr auto;gap:6px 8px;align-items:center">
+          ${d.catChanges.map(x => { const c = catMap[x.cat] || catMap.other; const mx = Math.max(x.cur, x.prev, x.avg); const col = x.cur > x.prev ? RED : GREEN; return html`
+            <span key=${x.cat} class="text-xs text-zinc-700 dark:text-zinc-300" style="white-space:nowrap">${c.emoji} ${CAT_NAMES[x.cat] || c.name}</span>
+            <div style="display:flex;flex-direction:column;gap:2px"><${Bar} v=${x.prev} max=${mx} color=${GREY} h=${4} /><${Bar} v=${x.cur} max=${mx} color=${col} h=${4} /></div>
+            <span class="text-xs font-semibold text-right" style="color:${col};white-space:nowrap">${x.cur > x.prev ? '+' : '\u2212'}${fmtShort(Math.abs(x.cur - x.prev))}</span>`; })}
+        </div>
+      `}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">
+        <${Tile} label="TB mỗi ngày có chi"><span class=${big}>${fmtShort(d.perDay.cur)}</span><${Delta} cur=${d.perDay.cur} prev=${d.perDay.prev} /><//>
+        <${Tile} label="TB mỗi lần"><span class=${big}>${fmtShort(d.perTx.cur)}</span><${Delta} cur=${d.perTx.cur} prev=${d.perTx.prev} /><//>
+        <${Tile} label="Số lần chi"><span class=${big}>${d.tx.cur}</span>${d.tx.prev > 0 && html`<span class="text-xs text-zinc-400">trước ${d.tx.prev}</span>`}<//>
+        ${d.maxDay && html`<${Tile} label="\u{1F525} Ngày chi nhiều nhất"><span class=${big}>${fmtShort(d.maxDay.amt)}</span><span class="text-xs text-zinc-400">${d.maxDay.date.slice(8, 10)}/${d.maxDay.date.slice(5, 7)} ${dow(d.maxDay.date)}</span><//>`}
       </div>
     </div>
   `;
