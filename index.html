@@ -556,6 +556,42 @@ function fixedCosts(expenses, month) {
   return { byCat, total, recurring: recurring.sort((a, b) => b.amount - a.amount), months };
 }
 
+// Tháng chưa đặt ngân sách: ước tính theo mục = trung bình của (mức cố định) và (TB 3 tháng gần nhất),
+// không thấp hơn sàn của mục; cộng lại thành ngân sách tháng. Chỉ xét tháng đã trọn (bỏ tháng hiện tại đang dở).
+function estimateBudget(expenses, m, catLimits) {
+  const cur = today().slice(0, 7);
+  const byMonth = {};
+  expenses.forEach(e => {
+    const em = e.date.slice(0, 7);
+    if (e.category === SAVINGS_CAT || em >= m || em >= cur) return;
+    (byMonth[em] = byMonth[em] || []).push(e);
+  });
+  const months = Object.keys(byMonth).filter(k => byMonth[k].length >= 8).sort().slice(-3);
+  if (!months.length) return null;
+  const fixed = fixedCosts(expenses, m > cur ? cur : m);
+  const byCat = {};
+  let total = 0;
+  CATEGORIES.forEach(c => {
+    if (c.id === SAVINGS_CAT) return;
+    const avg = months.reduce((s, k) => s + byMonth[k].filter(e => e.category === c.id).reduce((a, e) => a + e.amount, 0), 0) / months.length;
+    let v = fixed ? (avg + (fixed.byCat[c.id] || 0)) / 2 : avg;
+    v = Math.round(Math.max(v, minOf(catLimits, c.id)) / 10000) * 10000;
+    if (v > 0) byCat[c.id] = v;
+    total += v;
+  });
+  return { amount: total, estimated: true, byCat, months, fixedTotal: fixed ? fixed.total : 0 };
+}
+// budgets[m] trả về bản ghi thật nếu có, không thì bản ước tính (tính lười, nhớ theo tháng)
+function withEstimates(budgets, expenses, catLimits) {
+  const cache = {};
+  return new Proxy(budgets, { get(t, k) {
+    if (typeof k !== 'string' || !/^\d{4}-\d{2}$/.test(k)) return t[k];
+    if (k in t && t[k] && !t[k].estimated) return t[k];
+    if (!(k in cache)) cache[k] = estimateBudget(expenses, k, catLimits);
+    return cache[k] || undefined;
+  } });
+}
+
 // Tách mỗi khoản tháng này thành phần "cố định" (trong định mức của mục, theo thứ tự ngày) và phần tuỳ ý.
 // Trả về map id -> tiền tuỳ ý, và phần cố định chưa tới (phải chừa lại).
 function discretionaryOf(expenses, month, fixed) {
@@ -813,7 +849,7 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo, expenses = [] }) 
   `;
 }
 
-function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true, savings = 0, income: propIncome = 0, savingsTarget: propSavingsTarget = 0, dailyRemain = null, label = null, weekGoal = null, fixed = null, onOpenFixed = null, rangeFrom = null, rangeTo = null }) {
+function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true, savings = 0, income: propIncome = 0, savingsTarget: propSavingsTarget = 0, dailyRemain = null, label = null, weekGoal = null, fixed = null, onOpenFixed = null, rangeFrom = null, rangeTo = null, estimated = false }) {
   const budget = rawBudget || 15000000;
   const [editing, setEditing] = useState(false);
   const [incomeVal, setIncomeVal] = useState('');
@@ -894,7 +930,7 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
         </div>
       `}
       <div class="flex items-end justify-between gap-2" style="margin-top:4px">
-        <p class="text-2xl font-bold tracking-tight" style="color:${over ? '#ef4444' : dark ? '#f1f5f9' : '#18181b'}">${fmt(total)}đ <span class="text-xs font-normal" style="color:${mut}">/ ${fmtShort(budget)}${propIncome > 0 ? ' · lương ' + fmtShort(propIncome) : !rawBudget ? ' · mặc định' : ''}</span></p>
+        <p class="text-2xl font-bold tracking-tight" style="color:${over ? '#ef4444' : dark ? '#f1f5f9' : '#18181b'}">${fmt(total)}đ <span class="text-xs font-normal" style="color:${mut}">/ ${fmtShort(budget)}${propIncome > 0 ? ' · lương ' + fmtShort(propIncome) : estimated ? ' · ước tính' : !rawBudget ? ' · mặc định' : ''}</span></p>
         <p class="text-xs font-semibold shrink-0" style="color:${(dailyRemain != null ? dailyRemain < 0 : over) ? '#f87171' : '#10b981'}">
           ${dailyRemain != null
             ? (dailyRemain >= 0 ? 'Còn ' + fmtShort(dailyRemain) + '/ngày' : '⚠ Hết quota')
@@ -1176,7 +1212,7 @@ function MonthlyComparisonChart({ expenses, budgets, onFilter }) {
     const months = Object.keys(byMonth).sort().slice(-6);
     return months.map(m => {
       const b = budgets[m];
-      const budgetAmt = !b ? 0 : typeof b === 'number' ? b : (b.amount || 0);
+      const budgetAmt = !b || b.estimated ? 0 : typeof b === 'number' ? b : (b.amount || 0);
       const income = (b && typeof b === 'object' && b.income) || 0;
       return { month: m, total: byMonth[m] || 0, budget: budgetAmt, income };
     });
@@ -1722,7 +1758,8 @@ function StreakCard({ expenses }) {
 
 // ── Hạn mức danh mục (theo % ngân sách tháng) + phạt Mua sắm / Làm đẹp ──
 // Mặc định lấy từ phân tích 6 tháng T4–T9/2026, tổng 90%, 10% còn lại là dự phòng.
-const DEFAULT_LIMITS = { food: 21, health: 15, shopping: 17.5, relationship: 9, beauty: 10, entertainment: 7.5, bills: 3.5, other: 2.5, education: 2.5, transport: 1.5 };
+const DEFAULT_MINS = { health: 3500000 };   // sàn tuyệt đối theo mục: dù % thấp vẫn tối thiểu từng này (yoga)
+const DEFAULT_LIMITS = { _min: DEFAULT_MINS, food: 21, health: 15, shopping: 17.5, relationship: 9, beauty: 10, entertainment: 7.5, bills: 3.5, other: 2.5, education: 2.5, transport: 1.5 };
 const PENALTY_CATS = ['shopping', 'beauty'];
 const PENALTY_START = '2026-10';        // T9 là tháng làm quen, phạt bắt đầu tính từ T10
 // Phạt theo mức độ lố: lố càng sâu so với trần, tỷ lệ nộp càng cao. Không có trần.
@@ -1738,7 +1775,8 @@ const budgetAmountOf = (budgets, m, penalties) => {
   if (b) base = typeof b === 'number' ? b : (b.amount || (b.income ? b.income - (b.savings_target || 0) : 15000000));
   return Math.max(0, base - finesFor(penalties, m));
 };
-const baseLimitOf = (cat, m, catLimits, budgets, penalties) => catLimits[cat] ? Math.round(budgetAmountOf(budgets, m, penalties) * catLimits[cat] / 100) : 0;
+const minOf = (catLimits, cat) => (catLimits && catLimits._min && catLimits._min[cat]) || 0;
+const baseLimitOf = (cat, m, catLimits, budgets, penalties) => Math.max(catLimits[cat] ? Math.round(budgetAmountOf(budgets, m, penalties) * catLimits[cat] / 100) : 0, minOf(catLimits, cat));
 // Phần lố phải bù ĐỦ: lố tháng trước trừ hết vào tháng này; nếu tháng này không đủ để trừ,
 // phần còn dư dồn tiếp sang tháng kế (tối đa lần ngược 12 tháng).
 const BONUS_RATE = 0.5;                 // dưới trần thì 50% phần dư cộng vào trần tháng sau
@@ -1909,27 +1947,28 @@ function JarCard({ jar, penalties, rewards, challenge, expenses, onSaveJar, onOp
           </div>
           <div class="flex gap-2"><button onClick=${saveJar} class="text-xs font-semibold text-white" style="padding:5px 14px;border-radius:8px;background:#10b981;border:none">Lưu</button><button onClick=${() => setEdit(false)} class="text-xs text-zinc-500 dark:text-zinc-400" style="padding:5px 10px;border-radius:8px;background:rgba(128,128,128,0.12);border:none">Hủy</button></div>
         </div>` : html`
-        <div onClick=${openEdit} class="flex items-center gap-2.5" style="cursor:pointer" title="Đặt tên / đích cho hũ">
-          <span style="font-size:22px;line-height:1">${jar.emoji}</span>
-          <span class="flex-1 min-w-0 text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate">${jar.name}</span>
-          <span class="text-sm font-bold shrink-0" style="color:#0d9488">${fmtShort(fines)}${jar.target > 0 && html` <span class="text-xs text-zinc-400 font-normal">/ ${fmtShort(jar.target)}</span>`}</span>
-        </div>
-        ${jar.target > 0 && html`<div class="rounded-full overflow-hidden" style="height:4px;margin-top:8px;background:rgba(128,128,128,0.15)"><div class="h-full rounded-full" style="width:${pct}%;background:#14b8a6;transition:width .6s"></div></div>`}
-      `}
-      <div class="flex items-center gap-3 text-xs" style="margin-top:8px" title=${catsNote}>
-        <button onClick=${onOpenRewards} class="text-zinc-500 dark:text-zinc-400 truncate" style="background:none;border:none;padding:0;text-align:left">
-          \u{1F3C5} ${fmtShort(rew)}${pending ? html` · <span class="font-semibold" style="color:#b45309">${pending} chờ chọn</span>` : ''} \u203A
-        </button>
-        ${ledger.length > 0 && html`<button onClick=${() => setMore(!more)} class="text-zinc-400 shrink-0" style="background:none;border:none;padding:0">Lịch sử ${ledger.length} ${more ? '\u25BE' : '\u203A'}</button>`}
-        <span style="flex:1"></span>
-        ${cs ? html`
-          <span class="text-zinc-600 dark:text-zinc-300 shrink-0 flex items-center gap-1.5">\u{1F3AF} ${cs.soon ? 'Từ mai' : cs.dayNo + '/' + CHALLENGE.days}
-            <span class="flex gap-1">${cs.days.map(d => html`<span key=${d.d} title=${d.d} style="width:8px;height:8px;border-radius:50%;background:${d.state === 'clean' ? '#22c55e' : d.state === 'fail' ? '#ef4444' : d.state === 'today' ? '#14b8a6' : 'rgba(128,128,128,0.25)'}"></span>`)}</span>
+        <div class="flex flex-wrap items-center text-xs" style="gap:4px 12px">
+          <span onClick=${openEdit} class="flex items-center gap-1.5" style="cursor:pointer;flex:1 1 150px;min-width:150px" title="Đặt tên / đích cho hũ">
+            <span style="font-size:18px;line-height:1">${jar.emoji}</span>
+            <span class="text-sm font-semibold text-zinc-800 dark:text-zinc-200 truncate min-w-0">${jar.name}</span>
+            <span class="text-sm font-bold shrink-0" style="color:#0d9488">${fmtShort(fines)}${jar.target > 0 && html`<span class="text-xs text-zinc-400 font-normal"> / ${fmtShort(jar.target)}</span>`}</span>
           </span>
-        ` : html`
-          <button onClick=${onStartChallenge} class="font-semibold shrink-0" style="background:none;border:none;padding:0;color:#0d9488">\u{1F3AF} ${showLast ? (lastCh.result === 'win' ? 'Xong +' + (-lastCh.pts) + '\u2B50 · Làm lại' : 'Đứt · Làm lại') : 'Thử thách ' + CHALLENGE.days + ' ngày'} \u203A</button>
-        `}
-      </div>
+          <span class="flex items-center shrink-0" style="gap:12px;margin-left:auto">
+            <button onClick=${onOpenRewards} class="text-zinc-500 dark:text-zinc-400" style="background:none;border:none;padding:0;white-space:nowrap" title="Thưởng đã nhận · bấm để đổi">
+              \u{1F3C5} ${fmtShort(rew)}${pending ? html` · <span class="font-semibold" style="color:#b45309">${pending} chờ</span>` : ''} \u203A
+            </button>
+            ${ledger.length > 0 && html`<button onClick=${() => setMore(!more)} class="text-zinc-400" style="background:none;border:none;padding:0;white-space:nowrap" title="Lịch sử thưởng phạt">${ledger.length} mục ${more ? '\u25BE' : '\u203A'}</button>`}
+            ${cs ? html`
+              <span class="text-zinc-600 dark:text-zinc-300 flex items-center gap-1.5" style="white-space:nowrap" title=${catsNote}>\u{1F3AF} ${cs.soon ? 'Từ mai' : cs.dayNo + '/' + CHALLENGE.days}
+                <span class="flex gap-1">${cs.days.map(d => html`<span key=${d.d} title=${d.d} style="width:8px;height:8px;border-radius:50%;background:${d.state === 'clean' ? '#22c55e' : d.state === 'fail' ? '#ef4444' : d.state === 'today' ? '#14b8a6' : 'rgba(128,128,128,0.25)'}"></span>`)}</span>
+              </span>
+            ` : html`
+              <button onClick=${onStartChallenge} class="font-semibold" style="background:none;border:none;padding:0;color:#0d9488;white-space:nowrap" title="Thử thách: ${catsNote}">\u{1F3AF} ${showLast ? (lastCh.result === 'win' ? '\u2713 +' + (-lastCh.pts) + '\u2B50 · Lại' : '\u2717 Lại') : CHALLENGE.days + ' ngày'} \u203A</button>
+            `}
+          </span>
+        </div>
+        ${jar.target > 0 && html`<div class="rounded-full overflow-hidden" style="height:4px;margin-top:6px;background:rgba(128,128,128,0.15)"><div class="h-full rounded-full" style="width:${pct}%;background:#14b8a6;transition:width .6s"></div></div>`}
+      `}
       ${more && html`
         <div style="margin-top:6px;padding-top:4px;${line}">
           ${ledger.map(e => html`
@@ -2321,6 +2360,8 @@ function FinanceModal({ finance, onSave, onClose, dark, avgSpend }) {
 
 function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month, fixed = null }) {
   const [vals, setVals] = useState(() => Object.fromEntries(CATEGORIES.filter(c => c.id !== SAVINGS_CAT).map(c => [c.id, catLimits[c.id] || 0])));
+  const [mins, setMins] = useState(() => Object.fromEntries(CATEGORIES.filter(c => c.id !== SAVINGS_CAT).map(c => [c.id, minOf(catLimits, c.id) ? String(minOf(catLimits, c.id)) : ''])));
+  const minNum = id => parseInt((mins[id] || '').replace(/\D/g, ''), 10) || 0;
   const sum = Object.values(vals).reduce((s, v) => s + (parseFloat(v) || 0), 0);
   const buffer = Math.round((100 - sum) * 10) / 10;
   const bg = dark ? '#141922' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#262d38' : '#e6e8ed';
@@ -2331,7 +2372,7 @@ function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month, fix
           <h3 class="font-bold" style="color:${fg};font-size:16px">\u{1F3AF} Hạn mức danh mục</h3>
           <button onClick=${onClose} style="color:${mut};font-size:20px;line-height:1">×</button>
         </div>
-        <p class="text-xs" style="color:${mut}">% của ngân sách tháng (lương − tiết kiệm). Tháng ${parseInt(month.slice(5), 10)}: ngân sách ${fmtShort(monthBudget)}.</p>
+        <p class="text-xs" style="color:${mut}">% của ngân sách tháng (lương − tiết kiệm). Tháng ${parseInt(month.slice(5), 10)}: ngân sách ${fmtShort(monthBudget)}. Ô "sàn": số tiền tối thiểu dù % có thấp.</p>
         <div class="space-y-2" style="margin-top:14px">
           ${CATEGORIES.filter(c => c.id !== SAVINGS_CAT).map(c => html`
             <div key=${c.id} class="flex items-center gap-2">
@@ -2339,7 +2380,9 @@ function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month, fix
               <input type="number" step="0.5" min="0" max="100" value=${vals[c.id]} onInput=${e => setVals({ ...vals, [c.id]: e.target.value })}
                 style="width:64px;padding:6px 8px;border-radius:8px;border:1px solid ${bd};background:${dark ? '#0b0f15' : '#f4f5f8'};color:${fg};font-size:14px;text-align:right" />
               <span class="text-xs" style="color:${mut}">%</span>
-              <span class="ml-auto text-sm font-semibold" style="color:${fg}">${fmtShort(Math.round(monthBudget * (parseFloat(vals[c.id]) || 0) / 100))}</span>
+              <input inputMode="numeric" placeholder="sàn" value=${mins[c.id]} onInput=${e => setMins({ ...mins, [c.id]: e.target.value })} title="Tối thiểu (đ), để trống nếu không cần"
+                style="width:76px;padding:6px 8px;border-radius:8px;border:1px solid ${bd};background:${dark ? '#0b0f15' : '#f4f5f8'};color:${fg};font-size:13px;text-align:right" />
+              <span class="ml-auto text-sm font-semibold" style="color:${minNum(c.id) > Math.round(monthBudget * (parseFloat(vals[c.id]) || 0) / 100) ? '#0d9488' : fg}">${fmtShort(Math.max(Math.round(monthBudget * (parseFloat(vals[c.id]) || 0) / 100), minNum(c.id)))}</span>
               ${PENALTY_CATS.includes(c.id) && html`<span title="Có phạt khi vượt" style="font-size:12px">⚖️</span>`}
             </div>
           `)}
@@ -2355,7 +2398,7 @@ function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month, fix
             ${fixed.recurring.length > 0 && html`<p>Lặp mỗi tháng: ${fixed.recurring.slice(0, 6).map(r => r.label + ' ' + fmtShort(r.amount)).join(' · ')}</p>`}
           </div>`}
         <p class="text-xs" style="color:${mut};margin-top:10px;line-height:1.5">⚖️ Mua sắm và Làm đẹp có phạt từ T${parseInt(PENALTY_START.slice(5), 10)}/${PENALTY_START.slice(0, 4)}: dưới trần thì ${BONUS_RATE * 100}% phần dư được cộng vào trần tháng sau (nhịn vài tháng để dồn cho đợt sale); vượt hạn mức thì TOÀN BỘ phần lố bị trừ vào hạn mức tháng sau (trừ chưa hết thì dồn tiếp), và nộp thêm vào Tiết kiệm theo bậc: lố ≤10% trần nộp 20%, ≤30% nộp 30%, ≤50% nộp 40%, sâu hơn nộp 50% phần lố (tối thiểu ${fmtShort(PENALTY_MIN)}, không có trần). App tự ghi khoản đó ngày đầu tháng. Điểm ⭐ check-in đổi được: ${fmt(REWARD_QUOTA.pts)} điểm = +${fmtShort(REWARD_QUOTA.amount)} trần Mua sắm/Làm đẹp, ${fmt(REWARD_FINE.pts)} điểm = giảm ${REWARD_FINE.pct}% tiền phạt (bấm vào ⭐ trên đầu trang). Tuần nào tiêu không hết ngân sách tuần thì được +${WEEK_WIN.pts} điểm trở lên và ${WEEK_WIN.rate * 100}% phần dư nới trần Mua sắm/Làm đẹp.</p>
-        <button onClick=${() => { if (sum <= 100) onSave(Object.fromEntries(Object.entries(vals).map(([k, v]) => [k, parseFloat(v) || 0]))); }}
+        <button onClick=${() => { if (sum <= 100) onSave({ ...Object.fromEntries(Object.entries(vals).map(([k, v]) => [k, parseFloat(v) || 0])), _min: Object.fromEntries(Object.keys(mins).filter(k => minNum(k) > 0).map(k => [k, minNum(k)])) }); }}
           disabled=${sum > 100}
           class="w-full mt-4 py-3 rounded-xl bg-emerald-500 text-white font-medium disabled:opacity-40">Lưu hạn mức</button>
       </div>
@@ -3211,7 +3254,7 @@ function App() {
   const [userCode, setUC] = useState(() => getStoredUser());
   const [dark, setDark] = useState(() => load('tc-dark', false));
   const [expenses, setExpenses] = useState([]);
-  const [budgets, setBudgets] = useState({});
+  const [rawBudgets, setBudgets] = useState({});
   const [projects, setProjects] = useState([]);
   const [dateFrom, setDateFrom] = useState(() => today().slice(0,8) + '01');
   const [dateTo, setDateTo] = useState(() => today());
@@ -3219,6 +3262,7 @@ function App() {
   const [checkins, setCheckins] = useState([]);
   const [checkinReward, setCheckinReward] = useState(null);
   const [catLimits, setCatLimits] = useState(DEFAULT_LIMITS);
+  const budgets = useMemo(() => withEstimates(rawBudgets, expenses, catLimits), [rawBudgets, expenses, catLimits]);
   const [penalties, setPenalties] = useState({});
   const [rewards, setRewards] = useState({ log: [] });
   const [showRewards, setShowRewards] = useState(false);
@@ -3309,6 +3353,7 @@ function App() {
         const o = limitsNow.other || 0;
         limitsNow.relationship = Math.round(o * 0.8 * 2) / 2; limitsNow.other = Math.round((o - limitsNow.relationship) * 2) / 2;
       }
+      if (!limitsNow._min) limitsNow = { ...limitsNow, _min: DEFAULT_MINS };
       let pen = st.penalties || {};
       const rew = (st.rewards && typeof st.rewards === 'object') ? { log: [], ...st.rewards } : { log: [] };
       rewardsRef.current = rew;
@@ -3590,7 +3635,8 @@ function App() {
       const daysInMonth = new Date(fromDate.getFullYear(), fromDate.getMonth() + 1, 0).getDate();
       const isFullMonth = fromDate.getDate() === 1;
       const prorated = isFullMonth ? monthBudget : Math.round(monthBudget / daysInMonth * rangeDays);
-      return { total: prorated, months: 1, label: fromMonth, fullMonth: isFullMonth, income: bd.income, savings_target: bd.savings_target };
+      const b0 = budgets[fromMonth];
+      return { total: prorated, months: 1, label: fromMonth, fullMonth: isFullMonth, income: bd.income, savings_target: bd.savings_target, estimated: !!(b0 && b0.estimated) };
     }
     let total = 0, count = 0;
     const d = new Date(fromMonth + '-01');
@@ -3704,7 +3750,7 @@ function App() {
   } : {
     total: rangeTotal, budget: monthBudget, month: budgetMonth,
     monthCount: budgetInfo.months, fullMonth: budgetInfo.fullMonth, savings: rangeSavings,
-    income: budgetInfo.income, savingsTarget: budgetInfo.savings_target,
+    income: budgetInfo.income, savingsTarget: budgetInfo.savings_target, estimated: !!budgetInfo.estimated,
     dailyRemain: dailyInfo ? dailyInfo.dailyRemain : null, label: null,
     fixed: dailyInfo ? dailyInfo.fixed : null,
     rangeFrom: dateFrom, rangeTo: dateTo,
@@ -3844,7 +3890,7 @@ function App() {
         onSave=${async (f) => { setFinance(f); setShowFinance(false); await apiCall('/api/settings', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ finance: f }) }); }} />`}
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} expenses=${expenses} />
-        <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} weekGoal=${weekGoal} fixed=${budgetBarProps.fixed || null} onOpenFixed=${() => setShowLimits(true)} rangeFrom=${budgetBarProps.rangeFrom} rangeTo=${budgetBarProps.rangeTo} />
+        <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} weekGoal=${weekGoal} fixed=${budgetBarProps.fixed || null} onOpenFixed=${() => setShowLimits(true)} rangeFrom=${budgetBarProps.rangeFrom} rangeTo=${budgetBarProps.rangeTo} estimated=${!!budgetBarProps.estimated} />
         ${visibleDups.length > 0 && html`
           <div class="px-4 mt-3 space-y-2">
             ${visibleDups.map(group => {
