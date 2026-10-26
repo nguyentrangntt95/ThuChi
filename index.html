@@ -1144,11 +1144,14 @@ function DailySpendingChart({ expenses }) {
           const isActive = active === i;
           const day = parseInt(d[0].slice(8));
           const month = parseInt(d[0].slice(5, 7));
-          const label = day + '/' + month;
+          // Nhãn chỉ ghi ngày; ghi kèm tháng ở cột đầu và khi sang tháng mới để không dính chữ
+          const newMonth = i === 0 || d[0].slice(0, 7) !== data[i - 1][0].slice(0, 7);
+          const label = newMonth ? day + '/' + month : String(day);
+          const isToday = d[0] === today();
           return html`
             <g key=${d[0]} onMouseEnter=${() => setActive(i)} onClick=${() => { setActive(i); scrollToDate(d[0]); }} style="cursor:pointer">
               <rect x=${x} y=${y} width=${barW} height=${barH} rx="2" fill=${isActive ? '#059669' : '#10b981'} opacity=${isActive ? '1' : '0.8'} />
-              <text x=${x + barW/2} y=${H - pad + 10} text-anchor="middle" class="fill-zinc-400" style="font-size:6.5px">${label}</text>
+              <text x=${x + barW/2} y=${H - pad + 10} text-anchor="middle" class=${isToday ? 'fill-zinc-800 dark:fill-zinc-200' : 'fill-zinc-400'} style="font-size:7px;${isToday || newMonth ? 'font-weight:600' : ''}">${label}</text>
               ${isActive && html`
                 <rect x=${x + barW/2 - 28} y=${y - 18} width="56" height="16" rx="4" fill="#18181b" opacity="0.9" />
                 <text x=${x + barW/2} y=${y - 7} text-anchor="middle" fill="white" style="font-size:7px;font-weight:600">${fmtShort(d[1])}</text>
