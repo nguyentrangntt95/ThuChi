@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Thu Chi - Quản lý chi tiêu</title>
+<meta name="theme-color" content="#f3f4f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a0d12" media="(prefers-color-scheme: dark)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap">
 <script src="https://unpkg.com/qrcode-generator@1.4.4/qrcode.js"></script>
 <style>
 /* Animations */
@@ -103,7 +108,7 @@ select{appearance:auto}
 .bg-black\/40{background-color:rgb(0 0 0/.4)}.bg-black\/60{background-color:rgb(0 0 0/.6)}
 .bg-red-500{background-color:#ef4444}.bg-amber-500{background-color:#f59e0b}
 .bg-emerald-50{background-color:#ecfdf5}.bg-emerald-500{background-color:#10b981}
-.bg-zinc-50{background-color:#fafafa}.bg-zinc-100{background-color:#f4f4f5}
+.bg-zinc-50{background-color:#f4f5f8}.bg-zinc-100{background-color:#f4f4f5}
 .bg-zinc-600{background-color:#52525b}.bg-zinc-800{background-color:#27272a}.bg-zinc-900{background-color:#18181b}
 .bg-orange-500{background-color:#f97316}.bg-blue-500{background-color:#3b82f6}
 .bg-pink-500{background-color:#ec4899}.bg-purple-500{background-color:#a855f7}
@@ -122,7 +127,7 @@ select{appearance:auto}
 .rounded-t-2xl{border-top-left-radius:1rem;border-top-right-radius:1rem}
 .border-emerald-200{border-color:#a7f3d0}.border-emerald-300{border-color:#6ee7b7}
 .border-emerald-500{border-color:#10b981}
-.border-zinc-100{border-color:#f4f4f5}.border-zinc-200{border-color:#e4e4e7}.border-zinc-300{border-color:#d4d4d8}
+.border-zinc-100{border-color:#f4f4f5}.border-zinc-200{border-color:#e6e8ed}.border-zinc-300{border-color:#d4d4d8}
 
 /* Ring & Focus */
 :root{--tw-ring-color:#3b82f6}
@@ -158,9 +163,9 @@ select{appearance:auto}
 .hover\:bg-emerald-50:hover{background-color:#ecfdf5}
 .hover\:bg-emerald-600:hover{background-color:#059669}
 .hover\:bg-red-50:hover{background-color:#fef2f2}
-.hover\:bg-zinc-50:hover{background-color:#fafafa}
+.hover\:bg-zinc-50:hover{background-color:#f4f5f8}
 .hover\:bg-zinc-100:hover{background-color:#f4f4f5}
-.hover\:bg-zinc-200:hover{background-color:#e4e4e7}
+.hover\:bg-zinc-200:hover{background-color:#e6e8ed}
 .hover\:border-emerald-400:hover{border-color:#34d399}
 .hover\:text-emerald-600:hover{color:#059669}
 .hover\:text-red-500:hover{color:#ef4444}
@@ -182,11 +187,11 @@ select{appearance:auto}
 .dark .dark\:bg-zinc-800{background-color:#27272a}
 .dark .dark\:bg-zinc-900{background-color:#18181b}
 .dark .dark\:bg-zinc-900\/80{background-color:rgb(24 24 27/.8)}
-.dark .dark\:bg-zinc-200{background-color:#e4e4e7}
+.dark .dark\:bg-zinc-200{background-color:#e6e8ed}
 .dark .dark\:bg-emerald-900\/20{background-color:rgb(6 78 59/.2)}
 .dark .dark\:bg-emerald-900\/30{background-color:rgb(6 78 59/.3)}
 .dark .dark\:text-zinc-100{color:#f4f4f5}
-.dark .dark\:text-zinc-200{color:#e4e4e7}
+.dark .dark\:text-zinc-200{color:#e6e8ed}
 .dark .dark\:text-zinc-300{color:#d4d4d8}
 .dark .dark\:text-zinc-400{color:#a1a1aa}
 .dark .dark\:text-zinc-500{color:#71717a}
@@ -199,7 +204,7 @@ select{appearance:auto}
 .dark .dark\:border-zinc-800{border-color:#27272a}
 .dark .dark\:border-emerald-600{border-color:#059669}
 .dark .dark\:border-emerald-800{border-color:#065f46}
-.dark .dark\:fill-zinc-200{fill:#e4e4e7}
+.dark .dark\:fill-zinc-200{fill:#e6e8ed}
 .dark .dark\:fill-zinc-800{fill:#27272a}
 
 /* Dark + Hover */
@@ -211,6 +216,66 @@ select{appearance:auto}
 .dark .dark\:hover\:text-zinc-300:hover{color:#d4d4d8}
 .dark .dark\:hover\:text-emerald-400:hover{color:#34d399}
 .dark .dark\:hover\:border-emerald-500:hover{border-color:#10b981}
+
+/* ===== Theme 2026: font Inter, bề mặt mềm, viền mảnh, nút gradient, dark xanh đen ===== */
+:root{color-scheme:light}
+.dark{color-scheme:dark}
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-feature-settings:"cv11","ss01";font-variant-numeric:tabular-nums}
+input,select,textarea,button{font-family:inherit;font-variant-numeric:tabular-nums}
+button{-webkit-tap-highlight-color:transparent}
+::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:rgba(128,128,128,.28);border-radius:8px}::-webkit-scrollbar-track{background:transparent}
+.text-xl{font-size:1.25rem;line-height:1.75rem}
+.text-2xl{font-size:1.625rem;line-height:2rem;letter-spacing:-.02em}
+.rounded-lg{border-radius:.625rem}.rounded-xl{border-radius:1rem}.rounded-2xl{border-radius:1.375rem}
+.rounded-t-2xl{border-top-left-radius:1.375rem;border-top-right-radius:1.375rem}
+@media(min-width:640px){.sm\:rounded-2xl{border-radius:1.375rem}}
+@keyframes slideUp{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+.slide-up{animation:slideUp .32s cubic-bezier(.22,1,.36,1)}
+/* Nền sáng: xám lạnh, thẻ trắng viền mảnh có bóng nhẹ */
+.bg-zinc-50{background-color:#f3f4f7}.bg-zinc-100{background-color:#eceef2}
+.hover\:bg-zinc-50:hover{background-color:#f6f7f9}.hover\:bg-zinc-100:hover{background-color:#eceef2}.hover\:bg-zinc-200:hover{background-color:#e3e6eb}
+.bg-white\/80{background-color:rgb(255 255 255/.72)}
+.border-zinc-100{border-color:rgba(20,24,40,.05)}.border-zinc-200{border-color:rgba(20,24,40,.08)}.border-zinc-300{border-color:rgba(20,24,40,.15)}
+.bg-zinc-800{background-color:#1b1f27}.bg-zinc-900{background-color:#0a0d12}
+.text-zinc-900{color:#0f1219}.text-zinc-800{color:#1c2130}
+.min-h-screen.bg-zinc-50{background-image:radial-gradient(900px 420px at 50% -140px,rgba(16,185,129,.10),transparent 60%)}
+/* Nền tối: xanh đen thay vì xám, viền trắng mờ */
+.min-h-screen.dark{background-color:#0a0d12;background-image:radial-gradient(900px 420px at 50% -140px,rgba(16,185,129,.14),transparent 60%)}
+.dark .dark\:bg-zinc-900{background-color:#0a0d12}
+.dark .dark\:bg-zinc-800{background-color:#141922}
+.dark .dark\:bg-zinc-700{background-color:#1d242f}
+.dark .dark\:bg-zinc-900\/80{background-color:rgb(10 13 18/.72)}
+.dark .dark\:bg-zinc-200{background-color:#e8ebf1}
+.dark .dark\:border-zinc-600{border-color:rgba(255,255,255,.13)}
+.dark .dark\:border-zinc-700{border-color:rgba(255,255,255,.07)}
+.dark .dark\:border-zinc-700\/50{border-color:rgba(255,255,255,.05)}
+.dark .dark\:border-zinc-800{border-color:rgba(255,255,255,.06)}
+.dark .dark\:hover\:bg-zinc-600:hover{background-color:#2a3340}
+.dark .dark\:hover\:bg-zinc-700:hover{background-color:#232b37}
+.dark .dark\:hover\:bg-zinc-800:hover{background-color:#1a2029}
+.dark .dark\:text-zinc-100{color:#f2f4f8}.dark .dark\:text-zinc-200{color:#e2e6ee}.dark .dark\:text-zinc-300{color:#c4cad6}
+/* Thẻ */
+.card,.bg-white.rounded-xl.border{box-shadow:0 1px 2px rgba(16,24,40,.04),0 8px 20px -10px rgba(16,24,40,.14)}
+.dark .card,.dark .bg-white.rounded-xl.border{box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 10px 28px -14px rgba(0,0,0,.7)}
+/* Header kính + vạch màu mỏng trên cùng */
+header.sticky{position:sticky}
+header.sticky::before{content:"";position:absolute;left:0;right:0;top:0;height:2px;background:linear-gradient(90deg,#34d399,#22d3ee 50%,#a78bfa);opacity:.9}
+.backdrop-blur-md{backdrop-filter:blur(18px) saturate(1.6);-webkit-backdrop-filter:blur(18px) saturate(1.6)}
+.logo-mark{width:26px;height:26px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:13px;line-height:1;background:linear-gradient(135deg,#34d399,#0d9488);box-shadow:0 4px 12px -4px rgba(16,185,129,.8)}
+/* Nút chính: gradient xanh + bóng phát sáng */
+.bg-emerald-500.text-white{background-image:linear-gradient(135deg,#34d399 0%,#10b981 55%,#0d9488 100%);box-shadow:0 8px 20px -8px rgba(16,185,129,.65)}
+.bg-emerald-500.text-white:hover{filter:brightness(1.06)}
+.bg-emerald-500.text-white:disabled{box-shadow:none;filter:none}
+/* Chip đang chọn */
+.bg-zinc-800.rounded-full,.dark .dark\:bg-zinc-200.rounded-full{box-shadow:0 4px 12px -6px rgba(0,0,0,.5)}
+/* Ô nhập: viền sáng lên khi focus */
+.focus\:ring-1:focus,.focus\:ring-2:focus{box-shadow:0 0 0 3px rgba(16,185,129,.22);border-color:#10b981!important}
+/* Thanh tiến độ: bóng mờ trên mặt */
+.h-full.rounded-full.transition-all{background-image:linear-gradient(180deg,rgba(255,255,255,.3),rgba(255,255,255,0) 65%)!important}
+/* Lớp phủ modal mờ nền */
+.bg-black\/40{background-color:rgb(3 7 18/.5);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.bg-black\/60{background-color:rgb(3 7 18/.65);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.shadow-lg{box-shadow:0 10px 24px -8px rgba(16,24,40,.35)}
 </style>
 </head>
 <body>
@@ -783,9 +848,9 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
   };
 
   const inputStyle = "w-full px-3 py-2 text-sm rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500";
-  const inputBorder = "background:" + (dark ? '#0f172a' : '#fff') + ";border:1px solid " + (dark ? '#475569' : '#d4d4d8') + ";color:" + (dark ? '#e2e8f0' : '#27272a');
+  const inputBorder = "background:" + (dark ? '#0b0f15' : '#fff') + ";border:1px solid " + (dark ? '#36404f' : '#d4d4d8') + ";color:" + (dark ? '#e2e8f0' : '#27272a');
 
-  const mut = dark ? '#94a3b8' : '#a1a1aa', sep = dark ? '#334155' : '#f4f4f5';
+  const mut = dark ? '#94a3b8' : '#a1a1aa', sep = dark ? '#262d38' : '#f4f4f5';
   const canEdit = monthCount <= 1 && fullMonth;
   const openEdit = () => { setIncomeVal(propIncome > 0 ? propIncome.toString() : ''); setSavingsVal(propSavingsTarget > 0 ? propSavingsTarget.toString() : ''); setEditing(true); };
   const fast = pacePct != null && total > paceAmt;
@@ -796,7 +861,7 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
   if (savings > 0 || (propSavingsTarget > 0 && fullMonth && dailyRemain == null)) meta.push(html`<span style="color:${dark ? '#5eead4' : '#0d9488'}">\u{1F4B0} ${fmtShort(savings)}${propSavingsTarget > 0 ? ' / ' + fmtShort(propSavingsTarget) : ''}</span>`);
 
   return html`
-    <div class="mx-4 mt-3 p-4 rounded-xl" style="background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#334155' : '#e4e4e7'}">
+    <div class="mx-4 mt-3 p-4 rounded-xl card" style="background:${dark ? '#141922' : '#fff'};border:1px solid ${dark ? '#262d38' : '#e6e8ed'}">
       <div class="flex items-center justify-between">
         ${editing ? html`
           <span class="text-sm font-semibold" style="color:${dark ? '#f1f5f9' : '#27272a'}">${monthLabel}</span>
@@ -2017,7 +2082,7 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
   const [cat, setCat] = useState('shopping');
   const [amount, setAmount] = useState('');
   const amt = evalAmount(amount) || 0;
-  const bg = dark ? '#1e293b' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#334155' : '#e4e4e7';
+  const bg = dark ? '#141922' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#262d38' : '#e6e8ed';
   const verdict = useMemo(() => {
     if (amt <= 0) return null;
     const li = limitCheck ? limitCheck(cat, today(), amt, null) : null;
@@ -2155,7 +2220,7 @@ function TrySpendModal({ dark, limitCheck, dailyInfo, monthBudget, onSpend, onCl
           `)}
         </div>
         <input type="text" inputMode="decimal" autofocus value=${amount} onInput=${e => setAmount(e.target.value)} placeholder="Định tiêu bao nhiêu?"
-          style="width:100%;margin-top:12px;padding:12px 14px;border-radius:12px;border:1px solid ${bd};background:${dark ? '#0f172a' : '#fafafa'};color:${fg};font-size:20px;font-weight:700;text-align:center" />
+          style="width:100%;margin-top:12px;padding:12px 14px;border-radius:12px;border:1px solid ${bd};background:${dark ? '#0b0f15' : '#f4f5f8'};color:${fg};font-size:20px;font-weight:700;text-align:center" />
         ${amt > 0 && html`<p class="text-xs" style="color:${mut};text-align:center;margin-top:4px">= ${fmt(amt)}đ</p>`}
         ${v && html`
           <div class="fade-in" style="margin-top:14px;border-radius:14px;padding:14px;background:${v.color}18;border:1px solid ${v.color}55">
@@ -2215,7 +2280,7 @@ const daysBetween = (a, b) => Math.round((new Date(b + 'T00:00:00Z') - new Date(
 
 function FinanceModal({ finance, onSave, onClose, dark, avgSpend }) {
   const [f, setF] = useState(() => ({ ...DEFAULT_FINANCE, ...finance }));
-  const bg = dark ? '#1e293b' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#334155' : '#e4e4e7';
+  const bg = dark ? '#141922' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#262d38' : '#e6e8ed';
   const net = finNet(f);
   const gap = (f.goal_amount || 0) - net;
   const days = f.goal_date ? daysBetween(today(), f.goal_date) : 0;
@@ -2235,8 +2300,8 @@ function FinanceModal({ finance, onSave, onClose, dark, avgSpend }) {
             <div key=${k} class="flex items-center gap-2">
               <span class="text-sm" style="color:${fg};flex:1">${label}</span>
               ${type === 'date'
-                ? html`<input type="date" value=${f[k] || ''} onInput=${e => setF({ ...f, [k]: e.target.value })} style="width:150px;padding:6px 8px;border-radius:8px;border:1px solid ${bd};background:${dark ? '#0f172a' : '#fafafa'};color:${fg};font-size:13px" />`
-                : html`<input type="text" inputMode="numeric" value=${type === 'money' ? fmt(f[k] || 0) : (f[k] || 0)} onInput=${e => setNum(k, e.target.value)} style="width:150px;padding:6px 8px;border-radius:8px;border:1px solid ${bd};background:${dark ? '#0f172a' : '#fafafa'};color:${fg};font-size:13px;text-align:right" />`}
+                ? html`<input type="date" value=${f[k] || ''} onInput=${e => setF({ ...f, [k]: e.target.value })} style="width:150px;padding:6px 8px;border-radius:8px;border:1px solid ${bd};background:${dark ? '#0b0f15' : '#f4f5f8'};color:${fg};font-size:13px" />`
+                : html`<input type="text" inputMode="numeric" value=${type === 'money' ? fmt(f[k] || 0) : (f[k] || 0)} onInput=${e => setNum(k, e.target.value)} style="width:150px;padding:6px 8px;border-radius:8px;border:1px solid ${bd};background:${dark ? '#0b0f15' : '#f4f5f8'};color:${fg};font-size:13px;text-align:right" />`}
             </div>
           `)}
         </div>
@@ -2255,7 +2320,7 @@ function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month, fix
   const [vals, setVals] = useState(() => Object.fromEntries(CATEGORIES.filter(c => c.id !== SAVINGS_CAT).map(c => [c.id, catLimits[c.id] || 0])));
   const sum = Object.values(vals).reduce((s, v) => s + (parseFloat(v) || 0), 0);
   const buffer = Math.round((100 - sum) * 10) / 10;
-  const bg = dark ? '#1e293b' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#334155' : '#e4e4e7';
+  const bg = dark ? '#141922' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#262d38' : '#e6e8ed';
   return html`
     <div class="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center fade-in" style="background:rgba(0,0,0,0.55)" onClick=${onClose}>
       <div class="w-full slide-up" style="max-width:420px;background:${bg};border-radius:20px 20px 0 0;padding:20px 16px 24px;max-height:92vh;overflow-y:auto" onClick=${e => e.stopPropagation()}>
@@ -2269,7 +2334,7 @@ function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month, fix
             <div key=${c.id} class="flex items-center gap-2">
               <span class="text-sm" style="color:${fg};width:110px">${c.emoji} ${c.name}</span>
               <input type="number" step="0.5" min="0" max="100" value=${vals[c.id]} onInput=${e => setVals({ ...vals, [c.id]: e.target.value })}
-                style="width:64px;padding:6px 8px;border-radius:8px;border:1px solid ${bd};background:${dark ? '#0f172a' : '#fafafa'};color:${fg};font-size:14px;text-align:right" />
+                style="width:64px;padding:6px 8px;border-radius:8px;border:1px solid ${bd};background:${dark ? '#0b0f15' : '#f4f5f8'};color:${fg};font-size:14px;text-align:right" />
               <span class="text-xs" style="color:${mut}">%</span>
               <span class="ml-auto text-sm font-semibold" style="color:${fg}">${fmtShort(Math.round(monthBudget * (parseFloat(vals[c.id]) || 0) / 100))}</span>
               ${PENALTY_CATS.includes(c.id) && html`<span title="Có phạt khi vượt" style="font-size:12px">⚖️</span>`}
@@ -2281,7 +2346,7 @@ function LimitsModal({ catLimits, onSave, onClose, dark, monthBudget, month, fix
           <span class="text-sm font-semibold" style="color:${sum > 100 ? '#ef4444' : fg}">${fmtShort(Math.round(monthBudget * Math.max(0, 100 - sum) / 100))}</span>
         </div>
         ${fixed && fixed.total > 0 && html`
-          <div class="text-xs" style="margin-top:12px;padding:10px 12px;border-radius:12px;background:${dark ? '#0f172a' : '#fafafa'};color:${mut};line-height:1.6">
+          <div class="text-xs" style="margin-top:12px;padding:10px 12px;border-radius:12px;background:${dark ? '#0b0f15' : '#f4f5f8'};color:${mut};line-height:1.6">
             <p style="color:${fg}"><b>\u{1F4CC} Cố định ${fmtShort(fixed.total)}/tháng</b> · mức thấp nhất T${fixed.months.map(m => parseInt(m.slice(5), 10)).join(', T')}, chừa trước khi chia tiền tuỳ ý</p>
             <p>${Object.entries(fixed.byCat).sort((a, b) => b[1] - a[1]).map(([c, v]) => (catMap[c] || catMap.other).emoji + ' ' + fmtShort(v)).join(' · ')}</p>
             ${fixed.recurring.length > 0 && html`<p>Lặp mỗi tháng: ${fixed.recurring.slice(0, 6).map(r => r.label + ' ' + fmtShort(r.amount)).join(' · ')}</p>`}
@@ -2359,8 +2424,8 @@ function checkinStreakInfo(checkins) {
 }
 
 function RewardsModal({ checkins, rewards, penalties, catLimits, budgets, dark, onRedeem, onClose }) {
-  const bg = dark ? '#1e293b' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#334155' : '#e4e4e7';
-  const card = dark ? '#0f172a' : '#fafafa';
+  const bg = dark ? '#141922' : '#fff', fg = dark ? '#e2e8f0' : '#18181b', mut = dark ? '#94a3b8' : '#71717a', bd = dark ? '#262d38' : '#e6e8ed';
+  const card = dark ? '#0b0f15' : '#f4f5f8';
   const [busy, setBusy] = useState(false);
   const [help, setHelp] = useState(false);
   const bal = pointsBalance(checkins, rewards);
@@ -2484,7 +2549,7 @@ function CheckinModal({ reward, onClose, dark }) {
   return html`
     <div class="fixed inset-0 z-[9999] flex items-center justify-center fade-in" style="background:rgba(0,0,0,0.55);padding:16px" onClick=${onClose}>
       <${Confetti} />
-      <div class="pop-in w-full" style="max-width:340px;background:${dark ? '#1e293b' : '#fff'};border-radius:20px;padding:24px 20px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.35)" onClick=${e => e.stopPropagation()}>
+      <div class="pop-in w-full" style="max-width:340px;background:${dark ? '#141922' : '#fff'};border-radius:20px;padding:24px 20px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.35)" onClick=${e => e.stopPropagation()}>
         <div style="font-size:52px;line-height:1">${reward.icon ? reward.icon : reward.weekWin ? '\u{1F3C5}' : reward.milestone ? '\u{1F3C6}' : reward.streak >= 7 ? '\u{1F525}' : '\u{1F381}'}</div>
         <p class="text-xs font-semibold" style="color:${dark ? '#94a3b8' : '#71717a'};margin-top:10px;letter-spacing:.08em;text-transform:uppercase">${reward.title || 'Check-in ngày ' + reward.streak}</p>
         <p style="font-size:40px;font-weight:800;line-height:1.1;margin-top:4px;color:${dark ? '#fbbf24' : '#d97706'}">+${got}</p>
@@ -2871,7 +2936,7 @@ function ExpenseForm({ expense, onSave, onSaveBulk, onClose, allExpenses, dark, 
                             <input type="text" inputMode="decimal" value=${item.exchange_rate}
                               onInput=${e => updateScanItem(item._id, 'exchange_rate', e.target.value)}
                               class="w-20 px-2 py-1 rounded-lg text-sm font-semibold text-center focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              style="background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#3b82f6' : '#93c5fd'};color:${dark ? '#e2e8f0' : '#1e293b'}" />
+                              style="background:${dark ? '#141922' : '#fff'};border:1px solid ${dark ? '#3b82f6' : '#93c5fd'};color:${dark ? '#e2e8f0' : '#141922'}" />
                             <span class="text-sm" style="color:${dark ? '#60a5fa' : '#3b82f6'}">= ${fmt(item.amount)}đ</span>
                           </div>
                         `}
@@ -3725,6 +3790,7 @@ function App() {
       <header class="sticky top-0 z-40 backdrop-blur-md bg-white/80 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800">
         <div class="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
           <div class="flex items-center gap-2">
+            <span class="logo-mark">₫</span>
             <h1 class="text-lg font-bold text-zinc-900 dark:text-zinc-100 tracking-tight">Thu Chi</h1>
             <span class="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs font-medium">${userCode}</span>
             ${checkins.length > 0 && html`<button onClick=${() => setShowRewards(true)} class="px-2 py-0.5 rounded-full text-xs font-semibold" style="background:${dark ? 'rgba(245,158,11,0.15)' : '#fffbeb'};color:${dark ? '#fbbf24' : '#b45309'};border:none;cursor:pointer" title="Điểm check-in · bấm để đổi thưởng">${rewardLog(rewards).some(r => r.type === 'weekwin' && !r.cat) ? '🎁 ' : ''}⭐ ${fmtShort(pointsBalance(checkins, rewards))}</button>`}
@@ -3736,7 +3802,7 @@ function App() {
             </button>
             ${showSettings && html`
               <div class="absolute right-0 top-full mt-2 rounded-xl shadow-xl z-50 fade-in overflow-hidden"
-                style="width:200px;background:${dark ? '#1e293b' : '#fff'};border:1px solid ${dark ? '#334155' : '#e4e4e7'}"
+                style="width:200px;background:${dark ? '#141922' : '#fff'};border:1px solid ${dark ? '#262d38' : '#e6e8ed'}"
                 onClick=${e => e.stopPropagation()}>
                 <div style="padding:6px">
                   ${[
@@ -3755,7 +3821,7 @@ function App() {
                     </button>
                   `)}
                 </div>
-                <div style="padding:6px;border-top:1px solid ${dark ? '#334155' : '#e4e4e7'}">
+                <div style="padding:6px;border-top:1px solid ${dark ? '#262d38' : '#e6e8ed'}">
                   <button onClick=${() => { handleLogout(); setShowSettings(false); }}
                     style="display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:none;border-radius:8px;font-size:14px;text-align:left;cursor:pointer;background:transparent;color:#ef4444">
                     <span style="font-size:16px">\u{1F6AA}</span> Đăng xuất
@@ -3905,7 +3971,7 @@ function App() {
       <div class="fixed bottom-6 left-0 right-0 flex justify-center gap-3 z-30">
         <button onClick=${() => setShowTry(true)}
           class="px-4 py-3 rounded-full font-medium transition-all active:scale-95 flex items-center gap-1.5"
-          style="background:${dark ? '#1e293b' : '#fff'};color:#d97706;border:1.5px solid #f59e0b;box-shadow:0 4px 14px rgba(245,158,11,0.25)">
+          style="background:${dark ? '#141922' : '#fff'};color:#d97706;border:1.5px solid #f59e0b;box-shadow:0 4px 14px rgba(245,158,11,0.25)">
           \u{1F914} Thử tiêu
         </button>
         <button onClick=${() => setModal('new')}
