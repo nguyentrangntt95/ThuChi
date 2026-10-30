@@ -592,6 +592,29 @@ function withEstimates(budgets, expenses, catLimits) {
   } });
 }
 
+// Tháng m có phải tháng tiêu ít nhất không. Tháng đang chạy thì các tháng trước cũng chỉ tính đến cùng ngày,
+// để so cho công bằng. Chỉ so với tháng có từ 8 khoản, cần ít nhất 2 tháng trước đó.
+function monthStanding(expenses, m) {
+  const t = today(), cur = t.slice(0, 7);
+  if (m > cur) return null;
+  const full = m < cur;
+  const day = full ? 31 : parseInt(t.slice(8, 10), 10);
+  const byMonth = {};
+  expenses.forEach(e => {
+    if (e.category === SAVINGS_CAT) return;
+    const em = e.date.slice(0, 7);
+    if (em > m) return;
+    (byMonth[em] = byMonth[em] || []).push(e);
+  });
+  if (!byMonth[m] || byMonth[m].length < 8) return null;
+  const prev = Object.keys(byMonth).filter(k => k < m && byMonth[k].length >= 8).sort();
+  if (prev.length < 2) return null;
+  const upTo = k => byMonth[k].filter(e => parseInt(e.date.slice(8, 10), 10) <= day).reduce((s, e) => s + e.amount, 0);
+  const total = upTo(m);
+  const others = prev.map(k => ({ month: k, total: upTo(k) })).sort((a, b) => a.total - b.total);
+  return { month: m, total, best: total < others[0].total, n: prev.length + 1, runner: others[0], full, day };
+}
+
 // Tách mỗi khoản tháng này thành phần "cố định" (trong định mức của mục, theo thứ tự ngày) và phần tuỳ ý.
 // Trả về map id -> tiền tuỳ ý, và phần cố định chưa tới (phải chừa lại).
 function discretionaryOf(expenses, month, fixed) {
@@ -849,7 +872,7 @@ function DateRangePicker({ from, to, onChangeFrom, onChangeTo, expenses = [] }) 
   `;
 }
 
-function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true, savings = 0, income: propIncome = 0, savingsTarget: propSavingsTarget = 0, dailyRemain = null, label = null, weekGoal = null, fixed = null, onOpenFixed = null, rangeFrom = null, rangeTo = null, estimated = false }) {
+function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCount = 1, fullMonth = true, savings = 0, income: propIncome = 0, savingsTarget: propSavingsTarget = 0, dailyRemain = null, label = null, weekGoal = null, fixed = null, onOpenFixed = null, rangeFrom = null, rangeTo = null, estimated = false, standing = null }) {
   const budget = rawBudget || 15000000;
   const [editing, setEditing] = useState(false);
   const [incomeVal, setIncomeVal] = useState('');
@@ -894,6 +917,7 @@ function BudgetBar({ total, budget: rawBudget, onSetBudget, month, dark, monthCo
   const meta = [];
   if (pacePct != null) meta.push(html`<span title="Đã qua ${Math.round(pacePct)}% khoảng thời gian, nên tiêu khoảng ${fmtShort(paceAmt)}" style="color:${fast ? '#ef4444' : mut};${fast ? 'font-weight:600' : ''}">${fast ? '\u{1F3C3} nhanh hơn nhịp ' + fmtShort(total - paceAmt) : '\u25CF nhịp ' + Math.round(pacePct) + '%'}</span>`);
   if (dailyRemain != null && fixed && fixed.total > 0) meta.push(html`<span onClick=${onOpenFixed} style="cursor:pointer" title="Cố định ${fmtShort(fixed.total)}/tháng (mức thấp nhất T${fixed.months.map(m => parseInt(m.slice(5), 10)).join(', T')}), đã trừ trước khi chia tiền mỗi ngày. Bấm để xem.">\u{1F4CC} cố định ${fmtShort(fixed.reserved)} chưa tới</span>`);
+  if (standing && standing.best && dailyRemain == null) meta.push(html`<span title="Đến ngày ${standing.day}: ${fmtShort(standing.total)}, tháng tốt nhất trước đó T${parseInt(standing.runner.month.slice(5), 10)} là ${fmtShort(standing.runner.total)}" style="color:${dark ? '#fbbf24' : '#b45309'};font-weight:600">\u{1F3C6} ít nhất trong ${standing.n} tháng</span>`);
   if (savings > 0 || (propSavingsTarget > 0 && fullMonth && dailyRemain == null)) meta.push(html`<span style="color:${dark ? '#5eead4' : '#0d9488'}">\u{1F4B0} ${fmtShort(savings)}${propSavingsTarget > 0 ? ' / ' + fmtShort(propSavingsTarget) : ''}</span>`);
 
   return html`
@@ -2617,6 +2641,25 @@ function CheckinModal({ reward, onClose, dark }) {
   `;
 }
 
+function CheerModal({ st, onClose, dark }) {
+  const fg = dark ? '#f1f5f9' : '#18181b', mut = dark ? '#94a3b8' : '#71717a';
+  const mo = parseInt(st.month.slice(5), 10), rmo = parseInt(st.runner.month.slice(5), 10);
+  return html`
+    <div class="fixed inset-0 z-[9999] flex items-center justify-center fade-in" style="background:rgba(0,0,0,0.55);padding:16px" onClick=${onClose}>
+      <${Confetti} n=${48} />
+      <div class="pop-in w-full" style="max-width:340px;background:${dark ? '#141922' : '#fff'};border-radius:20px;padding:24px 20px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.35)" onClick=${e => e.stopPropagation()}>
+        <div style="font-size:52px;line-height:1">\u{1F3C6}</div>
+        <p class="text-xs font-semibold" style="color:${mut};margin-top:10px;letter-spacing:.08em;text-transform:uppercase">${st.full ? 'Tháng ' + mo + ' khép lại' : 'Tháng ' + mo + ' · đến ngày ' + st.day}</p>
+        <p style="font-size:22px;font-weight:800;line-height:1.2;margin-top:6px;color:${fg}">Tiêu ít nhất trong ${st.n} tháng</p>
+        <p style="font-size:36px;font-weight:800;line-height:1.1;margin-top:8px;color:#0d9488">${fmtShort(st.total)}</p>
+        <p class="text-xs" style="color:${mut};margin-top:4px">ít hơn tháng tốt nhất trước đó (T${rmo}: ${fmtShort(st.runner.total)}) <b style="color:#0d9488">${fmtShort(st.runner.total - st.total)}</b></p>
+        <p class="text-xs" style="margin-top:14px;padding:8px 10px;border-radius:10px;line-height:1.5;background:${dark ? 'rgba(20,184,166,0.12)' : '#f0fdfa'};color:${dark ? '#5eead4' : '#0f766e'}">${st.full ? 'Kỷ lục mới. Tháng sau giữ được một nửa đà này cũng đã đáng nể.' : 'Giữ nhịp này đến hết tháng là chốt kỷ lục. Cố lên!'}</p>
+        <button onClick=${onClose} class="w-full mt-4 py-2.5 rounded-xl text-sm font-semibold text-white" style="background:linear-gradient(135deg,#14b8a6,#6366f1)">Cảm ơn \u{1F64C}</button>
+      </div>
+    </div>
+  `;
+}
+
 function Dashboard({ rangeExpenses, allExpenses, budgets, onEdit, dateFrom, dateTo, filterCat, onFilter, limits, penaltyNote, baseLimits, monthBudget, jar, penalties, rewards, challenge, onSaveJar, onOpenRewards, onStartChallenge }) {
   const [expanded, setExpanded] = useState(() => load('tc-insights', false));
   useEffect(() => { save('tc-insights', expanded); }, [expanded]);
@@ -3261,6 +3304,7 @@ function App() {
   const [modal, setModal] = useState(null);
   const [checkins, setCheckins] = useState([]);
   const [checkinReward, setCheckinReward] = useState(null);
+  const [cheer, setCheer] = useState(null);
   const [catLimits, setCatLimits] = useState(DEFAULT_LIMITS);
   const budgets = useMemo(() => withEstimates(rawBudgets, expenses, catLimits), [rawBudgets, expenses, catLimits]);
   const [penalties, setPenalties] = useState({});
@@ -3740,6 +3784,15 @@ function App() {
 
   // Mục tiêu thưởng tuần đang chạy (chỉ hiện ở chế độ Hôm nay / Tuần này)
   const weekGoal = useMemo(() => dailyInfo ? weekGoalInfo(expenses, budgets, penalties, today()) : null, [dailyInfo, expenses, budgets, penalties]);
+  const monthStandingNow = useMemo(() => budgetInfo.months === 1 && budgetInfo.fullMonth ? monthStanding(expenses, budgetMonth) : null, [expenses, budgetInfo, budgetMonth]);
+  // Chúc mừng một lần: tháng trước khép lại mà ít nhất, hoặc tháng này từ ngày 20 đang ít nhất (so cùng mốc ngày)
+  useEffect(() => {
+    if (loading || checkinReward || cheer || !expenses.length) return;
+    const t = today(), cur = t.slice(0, 7), pm = prevMonthOf(cur);
+    const endKey = 'tc-cheer-end-' + pm, midKey = 'tc-cheer-mid-' + cur;
+    if (!load(endKey, false)) { const st = monthStanding(expenses, pm); if (st && st.best) { save(endKey, true); setCheer(st); return; } }
+    if (parseInt(t.slice(8, 10), 10) >= 20 && !load(midKey, false)) { const st = monthStanding(expenses, cur); if (st && st.best) { save(midKey, true); setCheer(st); } }
+  }, [expenses, checkinReward, loading]);
 
   // Chọn props cho BudgetBar theo chế độ đang xem
   const budgetBarProps = weekInfo ? {
@@ -3752,7 +3805,7 @@ function App() {
     monthCount: budgetInfo.months, fullMonth: budgetInfo.fullMonth, savings: rangeSavings,
     income: budgetInfo.income, savingsTarget: budgetInfo.savings_target, estimated: !!budgetInfo.estimated,
     dailyRemain: dailyInfo ? dailyInfo.dailyRemain : null, label: null,
-    fixed: dailyInfo ? dailyInfo.fixed : null,
+    fixed: dailyInfo ? dailyInfo.fixed : null, standing: monthStandingNow,
     rangeFrom: dateFrom, rangeTo: dateTo,
   };
 
@@ -3884,13 +3937,14 @@ function App() {
       </header>
 
       ${checkinReward && html`<${CheckinModal} reward=${checkinReward} dark=${dark} onClose=${() => setCheckinReward(null)} />`}
+      ${cheer && html`<${CheerModal} st=${cheer} dark=${dark} onClose=${() => setCheer(null)} />`}
       ${showRewards && html`<${RewardsModal} checkins=${checkins} rewards=${rewards} penalties=${penalties} catLimits=${catLimits} budgets=${budgets} dark=${dark} onRedeem=${redeemReward} onClose=${() => setShowRewards(false)} />`}
       ${showLimits && html`<${LimitsModal} catLimits=${catLimits} onSave=${saveLimits} onClose=${() => setShowLimits(false)} dark=${dark} month=${budgetMonth} monthBudget=${budgetAmountOf(budgets, budgetMonth, penalties)} fixed=${limitsFixed} />`}
       ${showFinance && html`<${FinanceModal} finance=${finance} dark=${dark} avgSpend=${budgetAmountOf(budgets, budgetMonth, penalties)} onClose=${() => setShowFinance(false)}
         onSave=${async (f) => { setFinance(f); setShowFinance(false); await apiCall('/api/settings', { method: 'POST', headers: { ...authHeaders(), 'Content-Type': 'application/json' }, body: JSON.stringify({ finance: f }) }); }} />`}
       <main class="max-w-lg mx-auto pb-24">
         <${DateRangePicker} from=${dateFrom} to=${dateTo} onChangeFrom=${setDateFrom} onChangeTo=${setDateTo} expenses=${expenses} />
-        <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} weekGoal=${weekGoal} fixed=${budgetBarProps.fixed || null} onOpenFixed=${() => setShowLimits(true)} rangeFrom=${budgetBarProps.rangeFrom} rangeTo=${budgetBarProps.rangeTo} estimated=${!!budgetBarProps.estimated} />
+        <${BudgetBar} total=${budgetBarProps.total} budget=${budgetBarProps.budget} onSetBudget=${setBudget} month=${budgetBarProps.month} dark=${dark} monthCount=${budgetBarProps.monthCount} fullMonth=${budgetBarProps.fullMonth} savings=${budgetBarProps.savings} income=${budgetBarProps.income} savingsTarget=${budgetBarProps.savingsTarget} dailyRemain=${budgetBarProps.dailyRemain} label=${budgetBarProps.label} weekGoal=${weekGoal} fixed=${budgetBarProps.fixed || null} onOpenFixed=${() => setShowLimits(true)} rangeFrom=${budgetBarProps.rangeFrom} rangeTo=${budgetBarProps.rangeTo} estimated=${!!budgetBarProps.estimated} standing=${budgetBarProps.standing || null} />
         ${visibleDups.length > 0 && html`
           <div class="px-4 mt-3 space-y-2">
             ${visibleDups.map(group => {
