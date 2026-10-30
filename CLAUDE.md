@@ -24,6 +24,7 @@
 3. Xem thử trên mock: `python tools/mock_server.py` rồi mở http://127.0.0.1:8765 (xem docstring để đăng nhập giả). KHÔNG đăng nhập production để test.
 4. Commit bằng file message: `git commit -F msg.txt` (message nhiều dòng qua `-m` trên PowerShell bị hỏng). Message tiếng Việt, kết thúc bằng dòng `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 5. `git push origin main` ngay, **không hỏi lại** Trang có muốn deploy không. Sửa xong là deploy.
+6. **BẮT BUỘC sau mỗi lần thêm / đổi tính năng hoặc đổi logic: cập nhật `CLAUDE.md` trong cùng commit.** Thêm vào mục "Logic nghiệp vụ cần nhớ" (tên hàm, hằng số, quy tắc), sửa các dòng đã lỗi thời, và ghi một dòng vào "Nhật ký tính năng" cuối file (ngày, commit, tóm tắt). Trang không nhớ hết các thay đổi; file này là trí nhớ duy nhất của project giữa các phiên AI. Chưa cập nhật CLAUDE.md thì chưa được coi là xong việc.
 
 ## Dữ liệu thật
 - Tài khoản của Trang: `user_code = trang01`. Dữ liệu chỉ nằm trong Postgres trên Railway.
@@ -46,3 +47,13 @@
 - Trả lời tiếng Việt, ngắn, thân mật. Trang thường gõ nhanh không dấu; đoán ý rồi làm, chỉ hỏi khi thật sự mơ hồ.
 - Yêu cầu "chỉ đẹp hơn" nghĩa là giữ nguyên tính năng 100%.
 - Sửa xong là deploy, không hỏi. Khi xong, tóm tắt ngắn những gì đã lên.
+- Mỗi lần xong một tính năng: cập nhật `CLAUDE.md` (xem bước 6) trước khi báo xong.
+
+## Nhật ký tính năng
+Mỗi lần thêm/đổi tính năng ghi một dòng: `YYYY-MM-DD · commit · tóm tắt`. Mới nhất ở trên.
+
+- 2026-10-30 · 9617b95 · Đưa tools/, CLAUDE.md, README lên repo; project không còn phụ thuộc máy local.
+- 2026-10-30 · 33eec9e · Chúc mừng tháng tiêu ít nhất (`monthStanding`, `CheerModal`, huy hiệu 🏆).
+- 2026-10-26 · 92a6d39 · Ngân sách ước tính cho tháng chưa đặt (`estimateBudget`), sàn theo mục (`_min`, health 3.5M), hũ gọn một dòng.
+- 2026-10-26 · 464876e · Biểu đồ ngày: nhãn chỉ số ngày.
+- 2026-10-26 · 920ab51 · Giao diện mới: Inter, dark xanh đen, nút gradient (không đổi tính năng).
