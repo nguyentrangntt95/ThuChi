@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "thu-chi",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "8080", "-d", "/Users/trang/ThuChi"],
-      "port": 8080
+      "name": "thu-chi-mock",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["tools/mock_server.py", "8765"],
+      "port": 8765
     }
   ]
 }

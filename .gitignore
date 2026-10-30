@@ -1,1 +1,11 @@
-# Sat Apr 11 21:19:33 +07 2026
+__pycache__/
+*.pyc
+.env
+.env.*
+
+# Dữ liệu thật / token / ảnh test: chỉ ở máy local, KHÔNG đẩy lên GitHub
+_*.json
+_*.jpg
+_*.png
+_tk
+tools/_*.json
